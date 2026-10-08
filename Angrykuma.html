@@ -1,0 +1,2339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>狂暴战熊：末日救赎 - 全球排行版</title>
+    <!-- 引入 Supabase 官方浏览器 SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="three.min.js"></script>
+    <script>
+        if (typeof THREE === 'undefined') {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');
+        }
+    </script>
+    <style>
+        * { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; margin: 0; padding: 0; box-sizing: border-box; }
+        body, html { width: 100%; height: 100%; overflow: hidden; background-color: #03060a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, 'Share Tech Mono', Consolas, 'PingFang SC', sans-serif; touch-action: none; display: flex; align-items: center; justify-content: center; }
+        .mono-font { font-family: 'Share Tech Mono', Consolas, monospace; }
+        #game-frame { position: relative; width: 100%; height: 100dvh; min-height: 100vh; max-width: 540px; margin: 0 auto; overflow: hidden; background: #020408; box-shadow: 0 0 60px rgba(0,0,0,0.95); border: 1px solid rgba(255,255,255,0.05); }
+        #canvas-container { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; overflow: hidden; }
+        #canvas-container canvas { display: block; width: 100% !important; height: 100% !important; }
+
+        /* 准心系统 */
+        #crosshair { position: absolute; pointer-events: none; transform: translate(-50%, -50%); transition: transform 0.02s linear; z-index: 35; }
+        #reticle-core { width: 8px; height: 8px; border-radius: 50%; background: #38bdf8; box-shadow: 0 0 8px #38bdf8; position: absolute; transform: translate(-50%, -50%); }
+        .reticle-bar { position: absolute; background: rgba(56, 189, 248, 0.95); box-shadow: 0 0 6px #38bdf8; }
+        #ret-top { width: 2px; height: 14px; transform: translate(-50%, -16px); }
+        #ret-bottom { width: 2px; height: 14px; transform: translate(-50%, 6px); }
+        #ret-left { height: 2px; width: 14px; transform: translate(-16px, -50%); }
+        #ret-right { height: 2px; width: 14px; transform: translate(6px, -50%); }
+        #shotgun-ring { width: 64px; height: 64px; border-radius: 50%; border: 1px dashed rgba(245, 158, 11, 0.85); position: absolute; transform: translate(-50%, -50%); animation: spinRing 9s linear infinite; }
+        @keyframes spinRing { from { transform: translate(-50%, -50%) rotate(0deg); } to { transform: translate(-50%, -50%) rotate(360deg); } }
+
+        #rpg-lock-indicator { position: absolute; width: 80px; height: 80px; transform: translate(-50%, -50%); pointer-events: none; display: flex; align-items: center; justify-content: center; }
+        #rpg-lock-indicator svg { width: 80px; height: 80px; transform: rotate(-90deg); }
+        #rpg-lock-text { position: absolute; font-size: 9px; font-weight: 900; color: #ef4444; background: rgba(0,0,0,0.8); padding: 2px 4px; border-radius: 4px; letter-spacing: 0.5px; }
+        #crosshair-reload { position: absolute; left: 28px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 6px; pointer-events: none; }
+        #crosshair-reload svg { width: 32px; height: 32px; transform: rotate(-90deg); }
+
+        #hitmarker { opacity: 0; transition: opacity 0.1s; position: absolute; transform: translate(-50%, -50%); width: 24px; height: 24px; }
+        #hitmarker .hm-line1 { position: absolute; inset: 0; margin: auto; width: 14px; height: 2px; background: #ef4444; transform: rotate(45deg); }
+        #hitmarker .hm-line2 { position: absolute; inset: 0; margin: auto; width: 14px; height: 2px; background: #ef4444; transform: rotate(-45deg); }
+
+        .dmg-text { position: absolute; pointer-events: none; font-weight: 900; text-shadow: 0 0 8px rgba(0,0,0,0.95), 0 2px 4px #000; animation: floatDamage 0.75s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards; transform: translate(-50%, -50%); z-index: 45; }
+        @keyframes floatDamage { 0% { opacity: 0; transform: translate(-50%, 0) scale(0.6); } 20% { opacity: 1; transform: translate(-50%, -15px) scale(1.2); } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -48px) scale(0.85); } }
+
+        .vignette-layer { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 10; }
+        #toxic-overlay { box-shadow: inset 0 0 80px rgba(34, 197, 94, 0.6); }
+        #damage-overlay { box-shadow: inset 0 0 90px rgba(239, 68, 68, 0.7); }
+        #invincible-overlay { box-shadow: inset 0 0 70px rgba(234, 179, 8, 0.65), 0 0 20px rgba(250, 204, 21, 0.5); border: 2px solid rgba(250, 204, 21, 0.8); }
+        #lightning-overlay { background: rgba(255, 255, 255, 0.4); z-index: 15; }
+
+        header { position: absolute; top: 0; left: 0; right: 0; padding: 10px; z-index: 25; display: flex; justify-content: space-between; align-items: flex-start; pointer-events: none; }
+        .hud-panel { background: rgba(10, 18, 30, 0.85); backdrop-filter: blur(8px); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 8px; padding: 4px 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.8); }
+        .bar-container { width: 64px; height: 8px; background: #171717; border-radius: 999px; overflow: hidden; border: 1px solid #404040; display: inline-block; }
+
+        #boss-hud { position: absolute; top: 104px; left: 14px; right: 14px; z-index: 25; pointer-events: none; transition: all 0.3s; }
+        .boss-card { background: rgba(0,0,0,0.82); backdrop-filter: blur(8px); border: 1px solid rgba(239, 68, 68, 0.55); border-radius: 9px; padding: 5px 8px; box-shadow: 0 0 14px rgba(239,68,68,0.25); }
+        #boss-hud .boss-card > div:first-child { margin-bottom: 2px !important; }
+        #boss-hud #boss-name { font-size: 10px !important; }
+        #boss-hud #boss-hp-pct { font-size: 9px !important; }
+        #boss-hud #boss-shield-box { margin-bottom: 2px !important; }
+        #boss-hud #boss-shield-box > div:first-child { font-size: 7px !important; }
+        #boss-hud #boss-shield-bar { height: 4px !important; }
+        #boss-hud #boss-hp-bar { height: 7px !important; }
+        #boss-hud .boss-card > div:last-child { font-size: 7px !important; margin-top: 2px !important; }
+
+        footer { position: absolute; bottom: 0; left: 0; right: 0; padding: 8px; z-index: 25; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+        .action-btn { background: rgba(23, 23, 23, 0.9); border: 1px solid #404040; border-radius: 8px; cursor: pointer; transition: transform 0.1s, border-color 0.1s; color: #fff; display: flex; align-items: center; justify-content: center; }
+        .action-btn:active { transform: scale(0.95); }
+
+        .modal-mask { position: absolute; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.92); backdrop-filter: blur(10px); padding: 16px; }
+        .modal-content { width: 100%; max-width: 360px; background: #171717; border: 1px solid #404040; border-radius: 16px; padding: 20px; text-align: center; box-shadow: 0 0 30px rgba(0,0,0,0.9); }
+        .btn-primary { width: 100%; padding: 12px; background: linear-gradient(90deg, #dc2626, #d97706, #dc2626); border: none; border-radius: 12px; color: white; font-weight: 900; font-size: 14px; letter-spacing: 1px; cursor: pointer; box-shadow: 0 0 15px rgba(239, 68, 68, 0.5); transition: transform 0.1s; }
+        .btn-primary:active { transform: scale(0.95); }
+        .btn-secondary { width: 100%; padding: 10px; background: #262626; border: 1px solid #404040; border-radius: 12px; color: #a3a3a3; font-weight: bold; font-size: 12px; cursor: pointer; transition: transform 0.1s; }
+        .btn-secondary:active { transform: scale(0.95); }
+        .hidden { display: none !important; }
+
+        /* 通关庆祝横幅样式 */
+        #celebration-banner { position: absolute; top: 30%; left: 0; right: 0; text-align: center; z-index: 40; pointer-events: none; transition: all 0.5s; }
+        .celeb-text { font-size: 42px; font-weight: 900; color: #fbbf24; text-shadow: 0 0 25px #d97706, 0 4px 8px #000; letter-spacing: 4px; animation: popBounce 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        @keyframes popBounce { 0% { transform: scale(0.1); opacity: 0; } 100% { transform: scale(1.0); opacity: 1; } }
+
+        /* 排行榜统一展示容器样式 (完全复刻塔防风格) */
+        .rank-box { width: 100%; background: rgba(15, 23, 42, 0.88); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 14px; padding: 12px 14px; color: #cbd5e1; font-size: 11.5px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.1), 0 10px 25px rgba(0,0,0,0.5); text-align: left; margin-bottom: 14px; }
+        .rank-title { font-weight: 900; color: #facc15; margin-bottom: 8px; font-size: 13px; letter-spacing: 1px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(250, 204, 21, 0.25); padding-bottom: 6px; }
+        .rank-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+        .rank-item:last-child { border-bottom: none; }
+        .rank-item .rank-num { font-weight: 900; color: #38bdf8; width: 28px; text-align: left; font-size: 12px; }
+        .rank-item.top1 .rank-num { color: #facc15; }
+        .rank-item.top2 .rank-num { color: #cbd5e1; }
+        .rank-item.top3 .rank-num { color: #d97706; }
+        .rank-name { font-weight: 800; color: #f8fafc; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+        .rank-loc { font-size: 10px; color: #38bdf8; margin-top: 1px; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .rank-score { font-weight: 900; color: #facc15; margin-left: auto; margin-right: 8px; font-size: 12px; }
+        .rank-date { font-size: 9.5px; color: #64748b; text-align: right; line-height: 1.25; }
+        
+        .name-input-box { display: flex; gap: 8px; justify-content: center; align-items: center; width: 100%; max-width: 320px; margin: 0 auto 12px; }
+        .name-input { flex: 1; background: rgba(15, 23, 42, 0.95); border: 1.5px solid #38bdf8; border-radius: 999px; padding: 8px 14px; color: #fff; font-size: 12px; font-weight: 700; text-align: center; outline: none; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); }
+        .name-input:focus { border-color: #facc15; box-shadow: 0 0 12px rgba(250, 204, 21, 0.4); }
+        
+        .ctrl-btn { background: rgba(15, 23, 42, 0.88); border: 1.5px solid rgba(255, 255, 255, 0.22); border-radius: 999px; padding: 8px 12px; color: #cbd5e1; font-size: 11px; font-weight: 900; cursor: pointer; backdrop-filter: blur(10px); transition: transform 0.1s, box-shadow 0.2s, border-color 0.2s, color 0.2s; box-shadow: 0 4px 15px rgba(0,0,0,0.6); text-align: center; }
+        .ctrl-btn:active { transform: scale(0.94); }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.2); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.5); border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+    <div id="game-frame">
+        <div id="canvas-container"></div>
+        <div id="toxic-overlay" class="vignette-layer"></div>
+        <div id="damage-overlay" class="vignette-layer"></div>
+        <div id="invincible-overlay" class="vignette-layer"></div>
+        <div id="lightning-overlay" class="vignette-layer"></div>
+
+        <div id="crosshair">
+            <div id="reticle-core"></div>
+            <div id="ret-top" class="reticle-bar"></div>
+            <div id="ret-bottom" class="reticle-bar"></div>
+            <div id="ret-left" class="reticle-bar"></div>
+            <div id="ret-right" class="reticle-bar"></div>
+            <div id="shotgun-ring" class="hidden"></div>
+            <div id="rpg-lock-indicator" class="hidden">
+                <svg><circle cx="40" cy="40" r="30" stroke="rgba(239,68,68,0.2)" stroke-width="3" fill="none"/><circle id="rpg-lock-ring" cx="40" cy="40" r="30" stroke="#ef4444" stroke-width="4" fill="none" stroke-linecap="round" stroke-dasharray="188.5" stroke-dashoffset="188.5"/></svg>
+                <span id="rpg-lock-text">AIMING 0%</span>
+            </div>
+            <div id="crosshair-reload" class="hidden">
+                <div style="position:relative; width:32px; height:32px; display:flex; align-items:center; justify-content:center;">
+                    <svg><circle cx="16" cy="16" r="12" stroke="rgba(255,255,255,0.2)" stroke-width="3" fill="none"/><circle id="ch-reload-ring" cx="16" cy="16" r="12" stroke="#38bdf8" stroke-width="3" fill="none" stroke-linecap="round" stroke-dasharray="75.4" stroke-dashoffset="75.4"/></svg>
+                </div>
+                <div style="display:flex; flex-direction:column;">
+                    <span style="font-size:9px; font-weight:900; color:#67e8f9; background:rgba(0,0,0,0.8); padding:1px 4px; border-radius:4px; border:1px solid rgba(6,182,212,0.4);">RELOAD</span>
+                    <span id="ch-reload-pct" style="font-size:8px; color:#d4d4d4; margin-top:2px;">0%</span>
+                </div>
+            </div>
+            <div id="hitmarker"><div class="hm-line1"></div><div class="hm-line2"></div></div>
+        </div>
+
+        <header>
+            <div style="display:flex; flex-direction:column; gap:4px;">
+                <div class="hud-panel" style="display:flex; align-items:center; gap:6px;">
+                    <span id="stance-badge" style="width:8px; height:8px; border-radius:50%; background:#34d399; box-shadow:0 0 6px #34d399;"></span>
+                    <span id="stance-text" style="font-size:10px; font-weight:bold; color:#34d399;">掩体防御 (背靠掩体)</span>
+                </div>
+                <div class="hud-panel" style="display:flex; align-items:center; gap:6px;">
+                    <span style="font-size:9px; font-weight:bold; color:#f87171;">HP</span>
+                    <div class="bar-container"><div id="hp-bar" style="width:100%; height:100%; background:linear-gradient(90deg, #10b981, #14b8a6); transition:width 0.15s;"></div></div>
+                    <span id="hp-text" class="mono-font" style="font-size:10px; font-weight:bold; color:#fff;">100</span>
+                </div>
+                <div class="hud-panel" style="display:flex; align-items:center; gap:6px;">
+                    <span style="font-size:9px; font-weight:bold; color:#38bdf8;">ARM</span>
+                    <div class="bar-container"><div id="armor-bar" style="width:0%; height:100%; background:linear-gradient(90deg, #0284c7, #38bdf8); transition:width 0.15s;"></div></div>
+                    <span id="armor-text" class="mono-font" style="font-size:10px; font-weight:bold; color:#38bdf8;">0</span>
+                </div>
+            </div>
+
+            <div style="display:flex; flex-direction:column; align-items:center;">
+                <div class="hud-panel" style="text-align:center;">
+                    <div id="stage-name-text" style="font-size:9px; color:#38bdf8; font-weight:bold; letter-spacing:1px;">第一关：沦陷废土</div>
+                    <div style="display:flex; align-items:center; justify-content:center; gap:6px; margin-top:2px;">
+                        <span id="wave-badge" class="mono-font" style="font-size:9px; font-weight:bold; color:#f59e0b; background:rgba(120,53,15,0.8); padding:1px 4px; border-radius:3px; border:1px solid rgba(245,158,11,0.4);">WAVE 1/4</span>
+                        <span id="timer-text" class="mono-font" style="font-size:15px; font-weight:900; color:#fff;">02:00</span>
+                    </div>
+                </div>
+                <div id="weather-badge" style="margin-top:2px; padding:1px 6px; background:rgba(0,0,0,0.6); border-radius:4px; font-size:8px; color:#fde047; border:1px solid #262626;">☀️ 白天晴天·废墟马路</div>
+                <div id="turret-status-badge" class="hidden" style="margin-top:4px; padding:2px 8px; background:rgba(6,182,212,0.9); color:#000; font-weight:900; font-size:9px; border-radius:999px;">🤖 机炮运转中: <span id="turret-timer-text">30s</span></div>
+            </div>
+
+            <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px; pointer-events:auto;">
+                <div style="display:flex; gap:6px;">
+                    <button id="btn-toggle-audio" class="action-btn" style="width:28px; height:28px; font-size:11px; color:#38bdf8;">🔊</button>
+                    <button id="btn-pause-game" class="action-btn" style="width:28px; height:28px; font-size:11px; color:#f59e0b;">⏸</button>
+                </div>
+                <div class="hud-panel" style="text-align:right;">
+                    <span style="font-size:8px; color:#a3a3a3; display:block;">消灭敌人</span>
+                    <span id="kill-count" class="mono-font" style="font-size:13px; font-weight:bold; color:#f59e0b;">000</span>
+                </div>
+                <div id="proximity-alert" class="hidden" style="background:rgba(220,38,38,0.95); padding:2px 6px; border-radius:4px; font-size:8px; color:#fff; font-weight:bold; box-shadow:0 0 10px #ef4444;">⚠️ 怪物正在疯狂撕扯掩体！</div>
+            </div>
+        </header>
+
+        <div id="boss-hud" class="hidden">
+            <div class="boss-card">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span style="width:8px; height:8px; border-radius:50%; background:#ef4444; box-shadow:0 0 8px #ef4444;"></span>
+                        <span id="boss-name" style="font-size:12px; font-weight:900; color:#f87171; letter-spacing:0.5px;">巨型厚血丧尸霸主</span>
+                    </div>
+                    <span id="boss-hp-pct" class="mono-font" style="font-size:11px; font-weight:bold; color:#f87171;">100%</span>
+                </div>
+                <div id="boss-shield-box" class="hidden" style="margin-bottom:4px;">
+                    <div style="display:flex; justify-content:space-between; font-size:8px; color:#38bdf8; margin-bottom:1px;">
+                        <span>充能等离子护盾 (仅激光蓄力时可受创破盾)</span>
+                        <span id="boss-shield-pct" class="mono-font">100%</span>
+                    </div>
+                    <div style="width:100%; height:6px; background:#000; border-radius:999px; overflow:hidden; border:1px solid #0284c7;">
+                        <div id="boss-shield-bar" style="width:100%; height:100%; background:linear-gradient(90deg, #0284c7, #38bdf8); transition:width 0.15s;"></div>
+                    </div>
+                </div>
+                <div style="width:100%; height:10px; background:#000; border-radius:999px; overflow:hidden; border:1px solid rgba(185,28,28,0.8); padding:1px;">
+                    <div id="boss-hp-bar" style="width:100%; height:100%; background:linear-gradient(90deg, #dc2626, #f59e0b); border-radius:999px; transition:width 0.15s;"></div>
+                </div>
+                <div style="font-size:8px; color:#a3a3a3; margin-top:3px; display:flex; justify-content:space-between;">
+                    <span>⚠ 瞄准高亮发光弱点可造成超高额暴击！</span>
+                    <span id="boss-status-text">受创达标触发硬直或机制</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="wave-alert" style="position:absolute; top:25%; left:0; right:0; display:flex; justify-content:center; z-index:25; pointer-events:none; transition:all 0.3s; opacity:0; transform:scale(0.9);">
+            <div style="padding:8px 24px; background:linear-gradient(90deg, rgba(127,29,29,0.9), rgba(0,0,0,0.9), rgba(127,29,29,0.9)); border-top:2px solid #ef4444; border-bottom:2px solid #ef4444; text-align:center; box-shadow:0 0 25px rgba(0,0,0,0.9);">
+                <div id="wave-alert-sub" style="font-size:9px; color:#f87171; font-weight:bold; letter-spacing:2px;">WARNING: WAVE INCOMING</div>
+                <div id="wave-alert-main" style="font-size:15px; font-weight:900; color:#fff; letter-spacing:1px;">第 1 波尸潮突袭！</div>
+            </div>
+        </div>
+
+        <div id="center-alert" style="position:absolute; top:33%; left:50%; transform:translate(-50%, -50%); z-index:25; pointer-events:none; transition:all 0.2s; opacity:0;">
+            <div style="padding:6px 14px; background:rgba(0,0,0,0.85); border:1px solid rgba(56,189,248,0.8); border-radius:8px; box-shadow:0 4px 15px rgba(0,0,0,0.8);">
+                <span id="center-alert-text" style="color:#67e8f9; font-weight:bold; font-size:11px; letter-spacing:0.5px;">按住探身射击，松手回掩体换弹</span>
+            </div>
+        </div>
+
+        <!-- 胜利横幅特效 -->
+        <div id="celebration-banner" class="hidden">
+            <div class="celeb-text">STAGE CLEARED!</div>
+        </div>
+
+        <div id="toast-box" style="position:absolute; top:56px; left:50%; transform:translateX(-50%); z-index:50; pointer-events:none; transition:all 0.3s; opacity:0;">
+            <div id="toast-text" style="padding:6px 16px; background:rgba(245,158,11,0.95); color:#000; font-weight:900; font-size:11px; border-radius:999px; border:1px solid #fde047; box-shadow:0 4px 12px rgba(0,0,0,0.6);">
+                通知消息
+            </div>
+        </div>
+
+        <footer>
+            <div style="display:flex; justify-content:flex-end; gap:6px; pointer-events:auto; padding-right:4px;">
+                <button id="btn-item-medkit" class="action-btn" style="padding:4px 8px; border-color:rgba(16,185,129,0.6); gap:4px;">
+                    <span style="font-size:13px;">🩹</span><span style="font-size:9px; font-weight:bold; color:#6ee7b7;">+50HP</span>
+                    <span id="item-medkit-qty" style="padding:1px 5px; background:#10b981; color:#000; font-size:8px; font-weight:900; border-radius:999px;">0</span>
+                </button>
+                <button id="btn-item-potion" class="action-btn" style="padding:4px 8px; border-color:rgba(245,158,11,0.6); gap:4px;">
+                    <span style="font-size:13px;">🧪</span><span style="font-size:9px; font-weight:bold; color:#fde047;">无敌10s</span>
+                    <span id="item-potion-qty" style="padding:1px 5px; background:#f59e0b; color:#000; font-size:8px; font-weight:900; border-radius:999px;">0</span>
+                </button>
+                <button id="btn-item-turret" class="action-btn" style="padding:4px 8px; border-color:rgba(6,182,212,0.6); gap:4px;">
+                    <span style="font-size:13px;">🤖</span><span style="font-size:9px; font-weight:bold; color:#67e8f9;">自动炮台</span>
+                    <span id="item-turret-qty" style="padding:1px 5px; background:#06b6d4; color:#000; font-size:8px; font-weight:900; border-radius:999px;">0</span>
+                </button>
+            </div>
+
+            <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:4px; pointer-events:auto; background:rgba(0,0,0,0.8); padding:6px; border-radius:12px; border:1px solid #262626;">
+                <button id="slot-vector" class="action-btn" style="flex-direction:column; padding:4px 2px; border:2px solid #38bdf8; background:rgba(8,47,73,0.5);">
+                    <span style="font-size:8px; font-weight:900; color:#38bdf8;">VECTOR</span><span style="font-size:13px; margin:1px 0;">⚡</span>
+                    <span id="ammo-vector" class="mono-font" style="font-size:9px; font-weight:900; color:#fff;">22/∞</span>
+                </button>
+                <button id="slot-shotgun" class="action-btn" style="flex-direction:column; padding:4px 2px; opacity:0.4;">
+                    <span style="font-size:8px; font-weight:900; color:#f59e0b;">S1897</span><span style="font-size:13px; margin:1px 0;">💥</span>
+                    <span id="ammo-shotgun" class="mono-font" style="font-size:9px; font-weight:900; color:#a3a3a3;">未解锁</span>
+                </button>
+                <button id="slot-rifle" class="action-btn" style="flex-direction:column; padding:4px 2px; opacity:0.4;">
+                    <span style="font-size:8px; font-weight:900; color:#10b981;">M4A1</span><span style="font-size:13px; margin:1px 0;">🎯</span>
+                    <span id="ammo-rifle" class="mono-font" style="font-size:9px; font-weight:900; color:#a3a3a3;">未解锁</span>
+                </button>
+                <button id="slot-rpg" class="action-btn" style="flex-direction:column; padding:4px 2px; opacity:0.4;">
+                    <span style="font-size:8px; font-weight:900; color:#ef4444;">RPG-7</span><span style="font-size:13px; margin:1px 0;">🚀</span>
+                    <span id="ammo-rpg" class="mono-font" style="font-size:9px; font-weight:900; color:#a3a3a3;">未解锁</span>
+                </button>
+                <button id="slot-airstrike" class="action-btn" style="flex-direction:column; padding:4px 2px; opacity:0.4;">
+                    <span style="font-size:8px; font-weight:900; color:#c084fc;">空袭</span><span style="font-size:13px; margin:1px 0;">✈</span>
+                    <span id="airstrike-timer-badge" class="mono-font" style="font-size:9px; font-weight:900; color:#a3a3a3;">未解锁</span>
+                </button>
+            </div>
+        </footer>
+
+        <!-- 故事关卡剧情说明 -->
+        <div id="story-intro-modal" class="modal-mask hidden">
+            <div class="modal-content" style="max-width:390px; max-height:86vh; display:flex; flex-direction:column;">
+                <div class="mono-font" style="font-size:9px; color:#ef4444; letter-spacing:2px; margin-bottom:5px;">RAGE BEAR // STORY ARCHIVE</div>
+                <h2 id="story-intro-title" style="font-size:20px; font-weight:900; color:#facc15; margin-bottom:8px;">第一关：沦陷废土</h2>
+                <div id="story-intro-text" class="custom-scrollbar" style="text-align:left; overflow-y:auto; background:rgba(0,0,0,0.55); border:1px solid #333; border-radius:10px; padding:13px; font-size:11px; line-height:1.85; color:#d4d4d4; max-height:48vh; white-space:pre-line;"></div>
+                <button id="btn-story-intro-start" class="btn-primary" style="margin-top:12px;">进入战场</button>
+            </div>
+        </div>
+
+        <!-- 故事模式最终结局 -->
+        <div id="story-ending-modal" class="modal-mask hidden">
+            <div class="modal-content" style="max-width:390px;">
+                <div style="font-size:34px; margin-bottom:6px;">🌅</div>
+                <div class="mono-font" style="font-size:9px; color:#38bdf8; letter-spacing:2px; margin-bottom:5px;">RAGE BEAR // FINAL REPORT</div>
+                <h2 style="font-size:20px; font-weight:900; color:#facc15; margin-bottom:10px;">末日救赎完成</h2>
+                <div id="story-ending-text" style="text-align:left; background:rgba(0,0,0,0.55); border:1px solid #333; border-radius:10px; padding:13px; font-size:11px; line-height:1.9; color:#d4d4d4;">最终，狂暴战熊击溃外星势力，粉碎了灭世阴谋，为幸存的人类守住了生机，让残破的地球，重新迎来了重生的曙光。</div>
+                <button id="btn-story-ending-home" class="btn-primary" style="margin-top:12px; background:linear-gradient(90deg,#0284c7,#2563eb,#0284c7); box-shadow:0 0 15px rgba(37,99,235,.45);">返回总部</button>
+            </div>
+        </div>
+
+        <!-- 主界面菜单 -->
+        <div id="main-menu-modal" class="modal-mask">
+            <div class="modal-content" style="max-height:92vh; display:flex; flex-direction:column;">
+                <div style="display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:4px;">
+                    <span style="font-size:24px;">🐻</span><h1 style="font-size:19px; font-weight:900; color:#ef4444; letter-spacing:1px;">狂暴战熊：末日救赎</h1>
+                </div>
+                <div class="mono-font" style="font-size:9px; color:#38bdf8; letter-spacing:1px; margin-bottom:12px;">RAGE BEAR: DOOMSDAY REDEMPTION</div>
+
+                <div style="text-align:left; background:rgba(0,0,0,0.6); padding:12px; border-radius:10px; border:1px solid #262626; font-size:11px; color:#d4d4d4; line-height:1.6; overflow-y:auto; max-height:210px; margin-bottom:14px;">
+                    <div style="font-weight:bold; color:#f59e0b; font-size:12px; border-bottom:1px solid #262626; padding-bottom:4px; margin-bottom:6px;">📜 绝密档案（公元2147年）</div>
+                    <p style="margin-bottom:6px;">病毒洗礼，异化四起！狂暴战熊身披黑甲，成为废土最后的希望！</p>
+                    <p style="color:#fca5a5;">【全球联网更新】：新增全球实时排行榜功能！无尽模式挑战开启，祝武运昌隆！</p>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:8px; margin-top:auto;">
+                    <button id="btn-story-mode" class="btn-primary">⭐ 故事模式 (5关通关)</button>
+                    <button id="btn-endless-mode" class="btn-primary" style="background:linear-gradient(90deg, #7c3aed, #4f46e5, #7c3aed); box-shadow:0 0 15px rgba(124, 58, 237, 0.5);">♾️ 无限肉鸽轮回 (ROGUE-LIKE)</button>
+                    <button id="btn-leaderboard" class="btn-secondary" style="border-color:#38bdf8; color:#38bdf8; background:rgba(2,132,199,0.1); padding: 12px;" onclick="openLeaderboardModal(event)">🏆 全球功勋榜</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="upgrade-modal" class="modal-mask hidden">
+            <div class="modal-content" style="max-width:370px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid #333; padding-bottom:8px;">
+                    <div style="text-align:left;">
+                        <div style="font-size:10px; font-weight:bold; color:#38bdf8; letter-spacing:2px;">STAGE CLEARED</div>
+                        <h2 style="font-size:17px; font-weight:900; color:#fff;" id="stage-clear-title">战场突破！战术特训</h2>
+                    </div>
+                    <div id="grade-badge-box" style="width:52px; height:52px; border-radius:12px; background:radial-gradient(circle, #f59e0b 0%, #78350f 100%); display:flex; align-items:center; justify-content:center; box-shadow:0 0 18px rgba(245,158,11,0.6); border:2px solid #fde047;">
+                        <span id="grade-badge-text" style="font-size:32px; font-weight:900; color:#fff; text-shadow:0 2px 4px #000;">S</span>
+                    </div>
+                </div>
+
+                <div id="grade-stats-box" style="display:grid; grid-template-columns:1fr 1fr; gap:6px; background:rgba(0,0,0,0.5); padding:8px; border-radius:8px; margin-bottom:10px; font-size:10px; text-align:left; color:#a3a3a3;">
+                    <div>本关消灭: <span id="stat-kills" class="mono-font" style="color:#f59e0b; font-weight:bold;">0</span></div>
+                    <div>弱点暴击: <span id="stat-crits" class="mono-font" style="color:#facc15; font-weight:bold;">0</span></div>
+                    <div>受创承伤: <span id="stat-damage" class="mono-font" style="color:#f87171; font-weight:bold;">0</span></div>
+                    <div>综合表现: <span id="stat-comment" style="color:#38bdf8; font-weight:bold;">末日猎神</span></div>
+                </div>
+
+                <p style="font-size:10px; color:#a3a3a3; margin-bottom:10px;">生命与武器弹药已全额补满！请选择一项强化：</p>
+                <div id="perk-container" style="display:flex; flex-direction:column; gap:8px; text-align:left;"></div>
+                <div id="endless-decision-box" class="hidden" style="margin-top:10px; padding-top:10px; border-top:1px solid #333;">
+                    <div style="font-size:11px; font-weight:900; color:#facc15; margin-bottom:6px;">♾️ 五关轮回完成：是否继续挑战？</div>
+                    <div style="display:flex; gap:8px;">
+                        <button id="btn-endless-continue" class="btn-primary" style="flex:1; padding:10px; background:linear-gradient(90deg,#7c3aed,#4f46e5,#7c3aed); box-shadow:0 0 12px rgba(124,58,237,.4);">继续挑战</button>
+                        <button id="btn-endless-retreat" class="btn-secondary" style="flex:1; padding:10px; color:#34d399; border-color:#34d399;">🏅 荣誉撤退</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="pause-modal" class="modal-mask hidden">
+            <div class="modal-content" style="max-width:280px;">
+                <h2 style="font-size:17px; font-weight:900; color:#fff; letter-spacing:1px; margin-bottom:16px;">作战暂停 (PAUSED)</h2>
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                    <button id="btn-resume" class="btn-primary" style="background:#0284c7; box-shadow:0 0 15px rgba(2,132,199,0.5);">继续战斗 (RESUME)</button>
+                    <button id="btn-restart-paused" class="btn-secondary">重新开始 (RESTART)</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 游戏结束/结算模块 (统一塔防排版) -->
+        <div id="gameover-modal" class="modal-mask hidden">
+            <div class="modal-content" style="max-width: 380px;">
+                <div style="font-size:28px; margin-bottom:6px;">☠️</div>
+                <h2 id="gameover-title" style="font-size:20px; font-weight:900; color:#ef4444; margin-bottom:4px;">防线失守</h2>
+                <p id="gameover-desc" style="font-size:11px; color:#a3a3a3; margin-bottom:14px;">掩体被攻破，狂暴战熊力竭倒下。</p>
+                
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; background:rgba(0,0,0,0.5); padding:10px; border-radius:10px; border:1px solid #262626; margin-bottom:14px;">
+                    <div><span style="font-size:9px; color:#737373; display:block;">总计击杀</span><span id="final-kills" class="mono-font" style="font-size:18px; font-weight:bold; color:#f59e0b;">0</span></div>
+                    <div><span style="font-size:9px; color:#737373; display:block;">突破阶段</span><span id="final-stage" class="mono-font" style="font-size:15px; font-weight:bold; color:#38bdf8;">1</span></div>
+                </div>
+
+                <!-- 战绩上传模块 -->
+                <div class="name-input-box">
+                    <input type="text" id="playerNameInput" maxlength="8" placeholder="指挥官呼号 (最多8字)" class="name-input">
+                    <button id="btn-save-name" class="ctrl-btn" style="color:#facc15; border-color:#facc15; padding: 7px 14px;">录入功勋</button>
+                </div>
+
+                <div class="rank-box" style="margin-bottom: 14px;">
+                    <div class="rank-title">
+                        <span>🏆 全球功勋榜 (TOP 5)</span>
+                        <span style="font-size:10px; color:#94a3b8;">实时云同步</span>
+                    </div>
+                    <div id="rankList"></div>
+                </div>
+
+                <div style="display:flex; gap:10px; justify-content:center;">
+                    <button id="btn-restart" class="btn-primary" style="flex:1; padding: 12px 10px; font-size:13px;">返回总部</button>
+                    <button id="btn-leaderboard-go" class="btn-secondary" style="flex:1; padding: 12px 10px; border-color:#38bdf8; color:#38bdf8; font-size:13px;">🏆 查看前20</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 全局排行榜弹窗 -->
+        <div id="leaderboard-modal" class="modal-mask hidden">
+            <div class="modal-content" style="max-width:380px; max-height:85vh; display:flex; flex-direction:column;">
+                <h2 style="font-size:18px; font-weight:900; color:#facc15; margin-bottom:4px;">🏆 全球功勋英雄榜 (TOP 20)</h2>
+                <div style="font-size:10px; color:#38bdf8; margin-bottom:10px;" id="currentLocDisplay">定位中...</div>
+                
+                <div class="rank-box custom-scrollbar" style="flex:1; overflow-y:auto; margin-bottom:0;">
+                    <div class="rank-title">
+                        <span>全服最高击杀记录</span>
+                        <span style="font-size:9px; color:#64748b;">实时云同步</span>
+                    </div>
+                    <div id="fullRankList"></div>
+                </div>
+
+                <button id="btn-close-leaderboard" class="btn-secondary" style="margin-top:14px; padding:12px;">返回界面</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ==========================================
+    // 1. Supabase 公共云端数据库接入配置
+    // ==========================================
+    // 👉 请将此处的 YOUR_SUPABASE_URL 替换为您的 Project URL
+    const SUPABASE_URL = 'https://vgzrmcszvtlfoqboctqu.supabase.co';
+    
+    // 👉 请将此处的 YOUR_SUPABASE_ANON_KEY 替换为您的 anon public 密钥
+    const SUPABASE_KEY = 'sb_publishable_O8UuSb6TTWJeZdM3nl-nQA_Ddrw1xLq';
+    
+    let supabaseClient = null;
+    function initSupabase() {
+        if (window.supabase && SUPABASE_URL && !SUPABASE_KEY.includes('YOUR_SUPABASE')) {
+            try {
+                supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                console.log('✅ Supabase 全球排行榜云数据库连接就绪');
+            } catch(err) {
+                console.warn('⚠️ Supabase 初始化异常，已启用离线备用机制:', err);
+            }
+        } else {
+            console.warn('⚠️ 未配置 Supabase Key，将使用本地缓存排行榜');
+        }
+    }
+    initSupabase();
+
+    function isSupabaseReady() {
+        return supabaseClient !== null && !SUPABASE_KEY.includes('YOUR_SUPABASE');
+    }
+
+    const STORAGE_KEY = 'ragebear_ranks_global_v1';
+    const LAST_NAME_KEY = 'ragebear_last_name';
+    const USER_LOC_KEY = 'ragebear_user_loc';
+    let currentRunRecordId = null;
+    let detectedLocation = localStorage.getItem(USER_LOC_KEY) || '';
+
+    // 自动感知 IP 地理位置 (双通道无缝切换)
+    async function fetchIpLocation() {
+        if (detectedLocation && detectedLocation !== '废土前线') {
+            const locDisp = document.getElementById('currentLocDisplay');
+            if (locDisp) locDisp.innerText = `📍 归属地: ${detectedLocation}`;
+            return;
+        }
+        try {
+            const res = await fetch('https://ipwho.is/?lang=zh-CN');
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    let loc = data.country || '';
+                    if (data.region && data.region !== data.country) {
+                        const cleanRegion = data.region.replace(/省|市|自治区|特别行政区/g, '');
+                        loc = loc ? `${loc}·${cleanRegion}` : cleanRegion;
+                    }
+                    if (loc) {
+                        detectedLocation = loc;
+                        localStorage.setItem(USER_LOC_KEY, detectedLocation);
+                        const locDisp = document.getElementById('currentLocDisplay');
+                        if (locDisp) locDisp.innerText = `📍 归属地: ${detectedLocation}`;
+                        return;
+                    }
+                }
+            }
+        } catch(e) {}
+        
+        try {
+            const res = await fetch('https://ipapi.co/json/');
+            if (res.ok) {
+                const data = await res.json();
+                let loc = data.country_name || '';
+                if (data.region && data.region !== loc) { loc = `${loc}·${data.region}`; }
+                if (loc) {
+                    detectedLocation = loc;
+                    localStorage.setItem(USER_LOC_KEY, detectedLocation);
+                    const locDisp = document.getElementById('currentLocDisplay');
+                    if (locDisp) locDisp.innerText = `📍 归属地: ${detectedLocation}`;
+                    return;
+                }
+            }
+        } catch(e) {}
+
+        detectedLocation = '废土前线';
+        const locDisp = document.getElementById('currentLocDisplay');
+        if (locDisp) locDisp.innerText = `📍 归属地: ${detectedLocation}`;
+    }
+
+    async function getStoredLeaderboard() {
+        if (isSupabaseReady()) {
+            try {
+                // 读取按照击杀得分排序的前20名
+                const { data, error } = await supabaseClient
+                    .from('leaderboard')
+                    .select('*')
+                    .order('score', { ascending: false })
+                    .limit(20);
+                if (!error && Array.isArray(data)) {
+                    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch(e) {}
+                    return data;
+                }
+            } catch(e) { console.warn('⚠️ 网络异常:', e); }
+        }
+        let list = [];
+        try { list = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch(e) { list = []; }
+        return Array.isArray(list) ? list : [];
+    }
+
+    function saveLocalLeaderboard(list) {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); } catch(e) {}
+    }
+
+    async function renderLeaderboardHTML(containerId, maxItems = 20, currentId = null) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.innerHTML = '<div style="padding: 16px 0; color:#38bdf8; text-align:center;">📡 正在同步全球战绩...</div>';
+        const list = (await getStoredLeaderboard()).slice(0, maxItems);
+        container.innerHTML = '';
+        if (list.length === 0) {
+            container.innerHTML = '<div style="padding: 24px 0; color:#64748b; text-align:center;">暂无战绩记录，快去建立防线登顶！</div>';
+            return;
+        }
+
+        list.forEach((item, idx) => {
+            const isCurrent = currentId && item.id === currentId;
+            const row = document.createElement('div');
+            row.className = `rank-item ${idx === 0 ? 'top1' : (idx === 1 ? 'top2' : (idx === 2 ? 'top3' : ''))}`;
+            if (isCurrent) {
+                row.style.background = 'rgba(56, 189, 248, 0.18)';
+                row.style.borderRadius = '6px';
+                row.style.padding = '6px 4px';
+            }
+            const rankDisplay = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `#${idx + 1}`));
+            const locTag = item.location ? `<div class="rank-loc">📍 ${item.location}</div>` : '';
+
+            row.innerHTML = `
+                <span class="rank-num">${rankDisplay}</span>
+                <div style="display:flex; flex-direction:column; align-items:flex-start; margin-right:auto; padding-left:4px;">
+                    <span class="rank-name" title="${item.name}">${item.name || '战熊'}</span>
+                    ${locTag}
+                </div>
+                <span class="rank-score">${(item.score || 0).toLocaleString()} 杀</span>
+                <div class="rank-date">
+                    <span style="color:#38bdf8; font-weight:800;">${item.wave || '记录'}</span><br>
+                    <span>${item.date || ''}</span>
+                </div>
+            `;
+            container.appendChild(row);
+        });
+    }
+
+    async function recordGameResult(finalKills, stageStr) {
+        if (GAME.mode !== 'ENDLESS') return;
+        if (finalKills <= 0) return;
+        const lastName = localStorage.getItem(LAST_NAME_KEY) || '战熊';
+        const today = new Date().toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+        const loc = detectedLocation || '废土前线';
+
+        if (!currentRunRecordId) {
+            currentRunRecordId = Date.now().toString() + Math.random().toString(36).substr(2, 6);
+        }
+
+        const recordPayload = {
+            id: currentRunRecordId,
+            name: lastName,
+            location: loc,
+            score: finalKills,  // score 字段用来存击杀数
+            wave: stageStr,
+            date: today
+        };
+
+        let localList = [];
+        try { localList = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch(e) {}
+        const existingIdx = localList.findIndex(it => it.id === currentRunRecordId);
+        if (existingIdx !== -1) {
+            localList[existingIdx].score = Math.max(localList[existingIdx].score, finalKills);
+            localList[existingIdx].wave = stageStr;
+            localList[existingIdx].date = today;
+        } else {
+            localList.push(recordPayload);
+        }
+        localList.sort((a, b) => b.score - a.score);
+        saveLocalLeaderboard(localList.slice(0, 20));
+
+        if (isSupabaseReady()) {
+            try {
+                const { error } = await supabaseClient.from('leaderboard').upsert(recordPayload);
+            } catch(err) { }
+        }
+        
+        await renderLeaderboardHTML('rankList', 5, currentRunRecordId);
+    }
+
+    async function updateRecordName(newName) {
+        newName = newName ? newName.trim() : '';
+        if (!newName) newName = '战熊';
+        localStorage.setItem(LAST_NAME_KEY, newName);
+        const loc = detectedLocation || '废土前线';
+
+        let localList = [];
+        try { localList = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch(e) {}
+        if (currentRunRecordId) {
+            const item = localList.find(it => it.id === currentRunRecordId);
+            if (item) {
+                item.name = newName;
+                if (!item.location || item.location === '废土前线') item.location = loc;
+                saveLocalLeaderboard(localList);
+            }
+        }
+
+        if (isSupabaseReady() && currentRunRecordId) {
+            try {
+                await supabaseClient.from('leaderboard').update({ name: newName, location: loc }).eq('id', currentRunRecordId);
+            } catch(e) {}
+        } else if (!currentRunRecordId) {
+            await recordGameResult(GAME.kills, GAME.mode === 'ENDLESS' ? `轮回${GAME.loopCount}-关${GAME.stage}` : `第${GAME.stage}关`);
+        }
+        
+        await renderLeaderboardHTML('rankList', 5, currentRunRecordId);
+        await renderLeaderboardHTML('fullRankList', 20, currentRunRecordId);
+        showToast("🎖️ 成绩已录入并同步至排行榜！");
+    }
+    // 打开全球排行榜弹窗
+    async function openLeaderboardModal(e) {
+        if (e) e.stopPropagation();
+        fetchIpLocation(); // 获取当前IP归属地
+        dom.leaderboardModal.classList.remove('hidden');
+        await renderLeaderboardHTML('fullRankList', 20);
+    }
+
+    // ==========================================
+    // 游戏核心引擎部分
+    // ==========================================
+    class TacticalAudioEngine {
+        constructor() { this.ctx = null; this.isMuted = false; }
+        init() {
+            if (!this.ctx) { const AudioCtx = window.AudioContext || window.webkitAudioContext; this.ctx = new AudioCtx(); }
+            if (this.ctx.state === 'suspended') this.ctx.resume();
+        }
+        playVector() {
+            if (this.isMuted || !this.ctx) return;
+            const t = this.ctx.currentTime; const osc = this.ctx.createOscillator(); const g = this.ctx.createGain();
+            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(620, t); osc.frequency.exponentialRampToValueAtTime(110, t + 0.055);
+            g.gain.setValueAtTime(0.42, t); g.gain.exponentialRampToValueAtTime(0.01, t + 0.055);
+            osc.connect(g); g.connect(this.ctx.destination); osc.start(t); osc.stop(t + 0.06);
+        }
+        playTurretShot() {
+            if (this.isMuted || !this.ctx) return;
+            const t = this.ctx.currentTime; const osc = this.ctx.createOscillator(); const g = this.ctx.createGain();
+            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(750, t); osc.frequency.exponentialRampToValueAtTime(120, t + 0.06);
+            g.gain.setValueAtTime(0.35, t); g.gain.exponentialRampToValueAtTime(0.01, t + 0.06);
+            osc.connect(g); g.connect(this.ctx.destination); osc.start(t); osc.stop(t + 0.07);
+        }
+        playShotgun() {
+            if (this.isMuted || !this.ctx) return;
+            const t = this.ctx.currentTime; const osc = this.ctx.createOscillator(); const og = this.ctx.createGain();
+            osc.type = 'sine'; osc.frequency.setValueAtTime(140, t); osc.frequency.exponentialRampToValueAtTime(25, t + 0.22);
+            og.gain.setValueAtTime(0.95, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.22); osc.connect(og); og.connect(this.ctx.destination);
+            osc.start(t); osc.stop(t + 0.24);
+            const bufSize = this.ctx.sampleRate * 0.12; const buf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate); const data = buf.getChannelData(0);
+            for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.3));
+            const noise = this.ctx.createBufferSource(); noise.buffer = buf; const ng = this.ctx.createGain();
+            ng.gain.setValueAtTime(0.8, t); ng.gain.exponentialRampToValueAtTime(0.01, t + 0.12); noise.connect(ng); ng.connect(this.ctx.destination); noise.start(t);
+        }
+        playRifle() {
+            if (this.isMuted || !this.ctx) return;
+            const t = this.ctx.currentTime; const bufSize = this.ctx.sampleRate * 0.055; const buf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate); const data = buf.getChannelData(0);
+            for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.22));
+            const noise = this.ctx.createBufferSource(); noise.buffer = buf; const filter = this.ctx.createBiquadFilter();
+            filter.type = 'bandpass'; filter.frequency.setValueAtTime(2800, t); filter.Q.setValueAtTime(1.6, t);
+            const gain = this.ctx.createGain(); gain.gain.setValueAtTime(0.6, t); gain.gain.exponentialRampToValueAtTime(0.01, t + 0.055);
+            noise.connect(filter); filter.connect(gain); gain.connect(this.ctx.destination); noise.start(t);
+            const osc = this.ctx.createOscillator(); const og = this.ctx.createGain(); osc.type = 'triangle'; osc.frequency.setValueAtTime(160, t); osc.frequency.exponentialRampToValueAtTime(45, t + 0.08);
+            og.gain.setValueAtTime(0.45, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.08); osc.connect(og); og.connect(this.ctx.destination); osc.start(t); osc.stop(t + 0.09);
+        }
+        playRPGLaunch() {
+            if (this.isMuted || !this.ctx) return;
+            const t = this.ctx.currentTime; const osc = this.ctx.createOscillator(); const g = this.ctx.createGain();
+            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(180, t); osc.frequency.linearRampToValueAtTime(600, t + 0.35);
+            g.gain.setValueAtTime(0.7, t); g.gain.exponentialRampToValueAtTime(0.01, t + 0.4); osc.connect(g); g.connect(this.ctx.destination); osc.start(t); osc.stop(t + 0.42);
+        }
+        playBombExplosion() {
+            if (this.isMuted || !this.ctx) return;
+            const t = this.ctx.currentTime; const osc = this.ctx.createOscillator(); const og = this.ctx.createGain();
+            osc.type = 'triangle'; osc.frequency.setValueAtTime(90, t); osc.frequency.exponentialRampToValueAtTime(20, t + 0.55);
+            og.gain.setValueAtTime(0.95, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.55); osc.connect(og); og.connect(this.ctx.destination); osc.start(t); osc.stop(t + 0.58);
+        }
+        playTankCannon() {
+            if (this.isMuted || !this.ctx) return;
+            const t = this.ctx.currentTime; const osc = this.ctx.createOscillator(); const og = this.ctx.createGain();
+            osc.type = 'triangle'; osc.frequency.setValueAtTime(70, t); osc.frequency.exponentialRampToValueAtTime(15, t + 0.7);
+            og.gain.setValueAtTime(1.0, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.7); osc.connect(og); og.connect(this.ctx.destination); osc.start(t); osc.stop(t + 0.72);
+        }
+        playLaser() {
+            if (this.isMuted || !this.ctx) return;
+            const t = this.ctx.currentTime; const osc = this.ctx.createOscillator(); const g = this.ctx.createGain();
+            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(950, t); osc.frequency.exponentialRampToValueAtTime(150, t + 0.12);
+            g.gain.setValueAtTime(0.4, t); g.gain.linearRampToValueAtTime(0.01, t + 0.12); osc.connect(g); g.connect(this.ctx.destination); osc.start(t); osc.stop(t + 0.13);
+        }
+        playThunder() {
+            if (this.isMuted || !this.ctx) return;
+            const t = this.ctx.currentTime; const osc = this.ctx.createOscillator(); const og = this.ctx.createGain();
+            osc.type = 'sine'; osc.frequency.setValueAtTime(55, t); osc.frequency.exponentialRampToValueAtTime(20, t + 0.8);
+            og.gain.setValueAtTime(0.4, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.8); osc.connect(og); og.connect(this.ctx.destination); osc.start(t); osc.stop(t + 0.85);
+        }
+        playZombieHit() {
+            if (this.isMuted || !this.ctx) return;
+            const t = this.ctx.currentTime; const osc = this.ctx.createOscillator(); const gain = this.ctx.createGain();
+            osc.type = 'sine'; osc.frequency.setValueAtTime(380, t); osc.frequency.exponentialRampToValueAtTime(90, t + 0.06);
+            gain.gain.setValueAtTime(0.25, t); gain.gain.linearRampToValueAtTime(0.01, t + 0.06); osc.connect(gain); gain.connect(this.ctx.destination); osc.start(t); osc.stop(t + 0.07);
+        }
+        playZombieClaw() {
+            if (this.isMuted || !this.ctx) return;
+            const t = this.ctx.currentTime; const osc = this.ctx.createOscillator(); const gain = this.ctx.createGain();
+            osc.type = 'sawtooth'; osc.frequency.setValueAtTime(200, t); osc.frequency.exponentialRampToValueAtTime(60, t + 0.12);
+            gain.gain.setValueAtTime(0.45, t); gain.gain.linearRampToValueAtTime(0.01, t + 0.12); osc.connect(gain); gain.connect(this.ctx.destination); osc.start(t); osc.stop(t + 0.13);
+        }
+        playCoverDeflect() {
+            if (this.isMuted || !this.ctx) return;
+            const t = this.ctx.currentTime; const osc = this.ctx.createOscillator(); const gain = this.ctx.createGain();
+            osc.type = 'triangle'; osc.frequency.setValueAtTime(750, t); osc.frequency.exponentialRampToValueAtTime(160, t + 0.1);
+            gain.gain.setValueAtTime(0.3, t); gain.gain.linearRampToValueAtTime(0.01, t + 0.1); osc.connect(gain); gain.connect(this.ctx.destination); osc.start(t); osc.stop(t + 0.11);
+        }
+        playCritHit() {
+            if (this.isMuted || !this.ctx) return;
+            const t = this.ctx.currentTime;
+            [1600, 2400, 3200].forEach((freq, idx) => {
+                const osc = this.ctx.createOscillator(); const gain = this.ctx.createGain();
+                osc.type = 'triangle'; osc.frequency.setValueAtTime(freq, t); gain.gain.setValueAtTime(0.35, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2 + idx * 0.05);
+                osc.connect(gain); gain.connect(this.ctx.destination); osc.start(t); osc.stop(t + 0.25);
+            });
+        }
+        playStunSound() {
+            if (this.isMuted || !this.ctx) return;
+            const t = this.ctx.currentTime; const osc = this.ctx.createOscillator(); const gain = this.ctx.createGain();
+            osc.type = 'sine'; osc.frequency.setValueAtTime(880, t); osc.frequency.linearRampToValueAtTime(440, t + 0.3);
+            gain.gain.setValueAtTime(0.4, t); gain.gain.exponentialRampToValueAtTime(0.01, t + 0.35); osc.connect(gain); gain.connect(this.ctx.destination); osc.start(t); osc.stop(t + 0.36);
+        }
+        playTeleport() {
+            if (this.isMuted || !this.ctx) return;
+            const t = this.ctx.currentTime; const osc = this.ctx.createOscillator(); const gain = this.ctx.createGain();
+            osc.type = 'sine'; osc.frequency.setValueAtTime(200, t); osc.frequency.exponentialRampToValueAtTime(1400, t + 0.18);
+            gain.gain.setValueAtTime(0.35, t); gain.gain.exponentialRampToValueAtTime(0.01, t + 0.2); osc.connect(gain); gain.connect(this.ctx.destination); osc.start(t); osc.stop(t + 0.22);
+        }
+        playSupplyPickup() {
+            if (this.isMuted || !this.ctx) return;
+            const t = this.ctx.currentTime;
+            [523, 659, 784, 1046].forEach((freq, idx) => {
+                const osc = this.ctx.createOscillator(); const gain = this.ctx.createGain();
+                osc.type = 'sine'; osc.frequency.setValueAtTime(freq, t + idx * 0.06); gain.gain.setValueAtTime(0, t); gain.gain.setValueAtTime(0.2, t + idx * 0.06); gain.gain.exponentialRampToValueAtTime(0.001, t + idx * 0.06 + 0.16);
+                osc.connect(gain); gain.connect(this.ctx.destination); osc.start(t + idx * 0.06); osc.stop(t + idx * 0.06 + 0.18);
+            });
+        }
+        playReloadStep(type) {
+            if (this.isMuted || !this.ctx) return;
+            const t = this.ctx.currentTime; const osc = this.ctx.createOscillator(); const gain = this.ctx.createGain();
+            osc.type = type === 'bolt' ? 'sawtooth' : 'triangle'; osc.frequency.setValueAtTime(type === 'bolt' ? 900 : 420, t); osc.frequency.exponentialRampToValueAtTime(180, t + 0.08);
+            gain.gain.setValueAtTime(0.22, t); gain.gain.linearRampToValueAtTime(0.01, t + 0.08); osc.connect(gain); gain.connect(this.ctx.destination); osc.start(t); osc.stop(t + 0.09);
+        }
+    }
+
+    const audio = new TacticalAudioEngine();
+
+    const STORY_INTROS = [
+        {
+            title: '第一关：沦陷废土',
+            text: '公元2147年，一场未知病毒突然席卷全球。短短数月，无数生物被感染、异化，变成狂暴嗜血的丧尸怪物，人类文明濒临崩塌。\n\n起初，所有人都以为这只是一场失控的生化灾难。文明的最后余晖中，身披战术头巾、手持制式枪械的狂暴战熊成为废土上最坚韧的异类。它独自扛起武器，踏入沦陷城区，开始肃清最早出现的感染体。\n\n但在尸潮深处，战熊发现了第一批不属于自然灾害的痕迹——这些病毒，似乎有人故意释放。'
+        },
+        {
+            title: '第二关：畸变升级',
+            text: '战熊穿过已经化为死城的废墟，追踪病毒扩散留下的实验痕迹。感染体正在发生更剧烈的异化，普通丧尸之外，巨型畸变体与飞天炎龙开始出现在战场。\n\n线索指向一处早已废弃的生物强化设施。资料显示，人类曾秘密进行违禁基因强化实验，试图改造生物、打造超强战斗军队。\n\n实验彻底失控，致命病毒从实验设施中大规模泄露。战熊终于确认：这场浩劫并非自然爆发，而是人类亲手打开的潘多拉魔盒。'
+        },
+        {
+            title: '第三关：人类实验产物',
+            text: '深入山林实验区后，战熊看到了最残酷的真相。这里曾经是基因强化项目的核心试验场，大量实验对象被改造成没有理智的杀戮机器。\n\n红色狂暴感染体成群出现，而实验记录中还隐藏着更加可怕的项目：部分研究人员试图把人类意识、病毒与强化基因结合，制造可以无限承受战斗损伤的“人类兵器”。\n\n守在实验区尽头的半人半尸改造暴君，是这个计划最后的活体产物。击败它，才能取得继续追查幕后势力的关键数据。'
+        },
+        {
+            title: '第四关：黑幕显露',
+            text: '实验数据揭开了第二层黑幕。部分人类高层政府早已与外星文明秘密勾结，并利用基因病毒清洗地球原生生命。\n\n他们的目标并不是拯救文明，而是让人类互相残杀，在灾难中彻底失去抵抗能力，再由外星势力接管地球生态与资源。\n\n实验基地已经进入全面战争状态。武装变异战士、重型装甲单位与残存的人类军队共同封锁最后的通道。战熊必须突破这座死亡防线，直面真正的幕后阴谋。'
+        },
+        {
+            title: '第五关：决战幕后黑手',
+            text: '所有线索最终汇聚于政府核心区。天空中的异象不再是自然灾害，而是外星舰队降临地球的前兆。\n\n飞天炎龙、武装变异战士与人尸混合军团，不过是这场灭世计划的前哨。真正的敌人已经现身——外星文明准备借助病毒完成对地球生命的清洗，并接管这颗星球。\n\n狂暴战熊背负着幸存者最后的希望，踏入最终战场。击溃外星入侵者，粉碎灭世阴谋，守住人类文明最后的火种！'
+        }
+    ];
+
+    const GAME = {
+        state: 'MENU',
+        mode: 'STORY',
+        storyIntroPending: false,
+        stageTransitionLock: false,
+        loopCount: 0,
+        difficultyScale: 1.0,
+
+        isPaused: false,
+        stage: 1,
+        maxStage: 5,
+        stageTimer: 120,
+        kills: 0,
+        hp: 100,
+        maxHp: 100,
+        armor: 0,
+        maxArmor: 100,
+        invincibleTimer: 0,
+        stageKills: 0,
+        stageCrits: 0,
+        stageDamageTaken: 0,
+
+        items: { medkit: 0, potion: 0, turret: 0 },
+        turretActive: false,
+        turretTimer: 0,
+        lastTurretFireTime: 0,
+        airstrikeCooldown: 0,
+        isAirstrikeActive: false,
+
+        poseFactor: 0,
+        isHoldingTouch: false,
+        rpgAimHoldTime: 0,
+
+        activeWeapon: 'vector',
+        weapons: {
+            vector: { unlocked: true, name: 'Vector 冲锋枪', magSize: 22, curAmmo: 22, reserve: Infinity, baseDmg: 20, fireRate: 0.085, reloadTime: 0.85, spread: 0.018, range: 95, recoilUp: 0.7, recoilSide: 0.35 },
+            shotgun: { unlocked: false, name: 'S1897 战术霰弹', magSize: 5, curAmmo: 5, reserve: 25, baseDmg: 28, pellets: 8, fireRate: 0.65, reloadTime: 2.0, spread: 0.035, range: 65, recoilUp: 8.5, recoilSide: 2.0 },
+            rifle: { unlocked: false, name: 'M4A1 突击步枪', magSize: 30, curAmmo: 30, reserve: 120, baseDmg: 38, fireRate: 0.11, reloadTime: 1.0, spread: 0.014, range: 120, recoilUp: 2.5, recoilSide: 1.0 },
+            rpg: { unlocked: false, name: 'RPG-7 火箭筒', magSize: 1, curAmmo: 1, reserve: 3, baseDmg: 950, aoeRadius: 16.0, fireRate: 0.5, reloadTime: 3.0, spread: 0.005, range: 160, recoilUp: 14.0, recoilSide: 3.0 }
+        },
+
+        damageMultiplier: 1.0,
+        lastFireTime: 0,
+        isReloading: false,
+        reloadTimer: 0,
+        crosshairPos: { x: 0, y: 0 },
+        touchLastPos: { x: 0, y: 0 },
+        cameraShake: 0,
+        nextSupplyTime: 20, 
+        boss: null,
+
+        currentWaveIndex: 1,
+        waveSpawnQueue: 0,
+        waveSpawnInterval: 0.35,
+        lastWaveSpawnTime: 0,
+        earlyAdvanceCountdown: -1,
+
+        currentWeather: 'sunny',
+        lightningTimer: 0
+    };
+
+    const STAGE_CONFIGS = [
+        { id: 1, name: "第一关：沦陷废土", weatherName: "☀️ 白天晴天·废墟马路", weatherType: "sunny", sky: 0x87ceeb, fog: 0xbcd8e6, ground: 0x333538, sunLight: 0xffffff, ambient: 0x556677, coverType: "car", zombieHpBase: 65, bossName: "巨型厚血丧尸霸主", bossHp: 7500 },
+        { id: 2, name: "第二关：畸变升级", weatherName: "🌆 城市郊区·傍晚疾风", weatherType: "windy", sky: 0xd97736, fog: 0x542918, ground: 0x382f25, sunLight: 0xff8844, ambient: 0x4a2a1a, coverType: "stump", zombieHpBase: 90, bossName: "喷火变异飞龙领主", bossHp: 6800 },
+        { id: 3, name: "第三关：人类实验产物", weatherName: "🌧️ 野外山林·暗夜细雨", weatherType: "drizzle", sky: 0x0a1420, fog: 0x060e18, ground: 0x182218, sunLight: 0x6688aa, ambient: 0x15202c, coverType: "rocks", zombieHpBase: 120, bossName: "半人半尸改造暴君 (狂暴者)", bossHp: 9000 },
+        { id: 4, name: "第四关：黑幕显露", weatherName: "❄️ 实验室前·晨曦微雪", weatherType: "snow", sky: 0x8899aa, fog: 0x556677, ground: 0xddeeff, sunLight: 0xffeedd, ambient: 0x445566, coverType: "bunker", zombieHpBase: 155, bossName: "双管重装突击战车坦克", bossHp: 22000 },
+        { id: 5, name: "第五关：决战幕后黑手", weatherName: "⚡ 政府大楼·暗夜干雷暴", weatherType: "dry_lightning", sky: 0x110822, fog: 0x0d0618, ground: 0x22222a, sunLight: 0x8866cc, ambient: 0x241838, coverType: "motorcycle", zombieHpBase: 190, bossName: "外星入侵母舰飞碟", bossHp: 25000 }
+    ];
+
+    let scene, camera, renderer, clock = new THREE.Clock();
+    let playerGroup, bearTorso, bearHead, bandanaRibbons = [];
+    let wepMeshes = {}, muzzlePointLight;
+    let coverGroup, environmentProps = new THREE.Group();
+    let turretGroup = null, turretHead = null, turretBarrelCluster = null;
+    let dirLight, ambLight;
+
+    let enemies = [], enemyProjectiles = [], supplyDrones = [];
+    let tracers = [], particles = [], explosions = [];
+    let jetMesh = null, weatherParticles, weatherPosArray;
+    const WEATHER_PARTICLE_COUNT = 600;
+
+    const dom = {
+        frame: document.getElementById('game-frame'), canvasBox: document.getElementById('canvas-container'),
+        crosshair: document.getElementById('crosshair'), rpgLockInd: document.getElementById('rpg-lock-indicator'), rpgLockRing: document.getElementById('rpg-lock-ring'), rpgLockText: document.getElementById('rpg-lock-text'),
+        chReload: document.getElementById('crosshair-reload'), chReloadRing: document.getElementById('ch-reload-ring'), chReloadPct: document.getElementById('ch-reload-pct'), shotgunRing: document.getElementById('shotgun-ring'), hitmarker: document.getElementById('hitmarker'),
+        stanceBadge: document.getElementById('stance-badge'), stanceText: document.getElementById('stance-text'), hpBar: document.getElementById('hp-bar'), hpText: document.getElementById('hp-text'), armorBar: document.getElementById('armor-bar'), armorText: document.getElementById('armor-text'),
+        timerText: document.getElementById('timer-text'), stageNameText: document.getElementById('stage-name-text'), weatherBadge: document.getElementById('weather-badge'), turretStatusBadge: document.getElementById('turret-status-badge'), turretTimerText: document.getElementById('turret-timer-text'),
+        waveBadge: document.getElementById('wave-badge'), waveAlert: document.getElementById('wave-alert'), waveAlertMain: document.getElementById('wave-alert-main'), waveAlertSub: document.getElementById('wave-alert-sub'), killCount: document.getElementById('kill-count'),
+        proximityAlert: document.getElementById('proximity-alert'), bossHud: document.getElementById('boss-hud'), bossHpBar: document.getElementById('boss-hp-bar'), bossHpPct: document.getElementById('boss-hp-pct'), bossShieldBox: document.getElementById('boss-shield-box'), bossShieldBar: document.getElementById('boss-shield-bar'), bossShieldPct: document.getElementById('boss-shield-pct'),
+        bossName: document.getElementById('boss-name'), bossStatusText: document.getElementById('boss-status-text'), centerAlert: document.getElementById('center-alert'), centerAlertText: document.getElementById('center-alert-text'), celebrationBanner: document.getElementById('celebration-banner'),
+        toastBox: document.getElementById('toast-box'), toastText: document.getElementById('toast-text'), toxicOverlay: document.getElementById('toxic-overlay'), damageOverlay: document.getElementById('damage-overlay'), invincibleOverlay: document.getElementById('invincible-overlay'), lightningOverlay: document.getElementById('lightning-overlay'),
+        btnItemMedkit: document.getElementById('btn-item-medkit'), itemMedkitQty: document.getElementById('item-medkit-qty'), btnItemPotion: document.getElementById('btn-item-potion'), itemPotionQty: document.getElementById('item-potion-qty'), btnItemTurret: document.getElementById('btn-item-turret'), itemTurretQty: document.getElementById('item-turret-qty'),
+        slotVector: document.getElementById('slot-vector'), ammoVector: document.getElementById('ammo-vector'), slotShotgun: document.getElementById('slot-shotgun'), ammoShotgun: document.getElementById('ammo-shotgun'), slotRifle: document.getElementById('slot-rifle'), ammoRifle: document.getElementById('ammo-rifle'), slotRpg: document.getElementById('slot-rpg'), ammoRpg: document.getElementById('ammo-rpg'), slotAirstrike: document.getElementById('slot-airstrike'), airstrikeTimerBadge: document.getElementById('airstrike-timer-badge'),
+        mainMenuModal: document.getElementById('main-menu-modal'), btnStoryMode: document.getElementById('btn-story-mode'), btnEndlessMode: document.getElementById('btn-endless-mode'), btnLeaderboard: document.getElementById('btn-leaderboard'),
+        pauseModal: document.getElementById('pause-modal'), btnResume: document.getElementById('btn-resume'), btnRestartPaused: document.getElementById('btn-restart-paused'),
+        upgradeModal: document.getElementById('upgrade-modal'), gradeBadgeBox: document.getElementById('grade-badge-box'), gradeBadgeText: document.getElementById('grade-badge-text'), statKills: document.getElementById('stat-kills'), statCrits: document.getElementById('stat-crits'), statDamage: document.getElementById('stat-damage'), statComment: document.getElementById('stat-comment'), perkContainer: document.getElementById('perk-container'),
+        storyIntroModal: document.getElementById('story-intro-modal'), storyIntroTitle: document.getElementById('story-intro-title'), storyIntroText: document.getElementById('story-intro-text'), btnStoryIntroStart: document.getElementById('btn-story-intro-start'), storyEndingModal: document.getElementById('story-ending-modal'), btnStoryEndingHome: document.getElementById('btn-story-ending-home'), endlessDecisionBox: document.getElementById('endless-decision-box'), btnEndlessContinue: document.getElementById('btn-endless-continue'), btnEndlessRetreat: document.getElementById('btn-endless-retreat'),
+        gameOverModal: document.getElementById('gameover-modal'), gameoverTitle: document.getElementById('gameover-title'), gameoverDesc: document.getElementById('gameover-desc'), finalKills: document.getElementById('final-kills'), finalStage: document.getElementById('final-stage'), btnRestart: document.getElementById('btn-restart'),
+        btnToggleAudio: document.getElementById('btn-toggle-audio'), btnPauseGame: document.getElementById('btn-pause-game'),
+        playerNameInput: document.getElementById('playerNameInput'), btnSaveName: document.getElementById('btn-save-name'), btnLeaderboardGo: document.getElementById('btn-leaderboard-go'), leaderboardModal: document.getElementById('leaderboard-modal'), btnCloseLeaderboard: document.getElementById('btn-close-leaderboard')
+    };
+
+    function showToast(msg) {
+        dom.toastText.innerText = msg; dom.toastBox.style.opacity = '1'; dom.toastBox.style.transform = 'translateX(-50%) translateY(0)';
+        setTimeout(() => { dom.toastBox.style.opacity = '0'; dom.toastBox.style.transform = 'translateX(-50%) translateY(-8px)'; }, 2200);
+    }
+
+    // 移动端稳定性优化：限制渲染分辨率，并统一释放临时 Three.js 资源，避免长时间运行后 GPU/内存持续增长。
+    const IS_MOBILE_DEVICE = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || navigator.maxTouchPoints > 0 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const MAX_PARTICLES = IS_MOBILE_DEVICE ? 140 : 240;
+    const MAX_DAMAGE_DOM = IS_MOBILE_DEVICE ? 18 : 30;
+
+    function disposeObject3D(root) {
+        if (!root) return;
+        root.traverse(obj => {
+            if (obj.geometry && typeof obj.geometry.dispose === 'function') obj.geometry.dispose();
+            if (obj.material) {
+                const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+                mats.forEach(mat => {
+                    if (mat && typeof mat.dispose === 'function') mat.dispose();
+                });
+            }
+        });
+    }
+
+    function safeRemoveObject3D(root, dispose = true) {
+        if (!root) return;
+        if (root.parent) root.parent.remove(root);
+        else if (scene) scene.remove(root);
+        if (dispose) disposeObject3D(root);
+    }
+
+    function initThree() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(STAGE_CONFIGS[0].sky);
+        scene.fog = new THREE.FogExp2(STAGE_CONFIGS[0].fog, 0.015);
+
+        const viewRect = dom.canvasBox.getBoundingClientRect();
+        const width = Math.max(1, Math.round(viewRect.width));
+        const height = Math.max(1, Math.round(viewRect.height));
+        camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 280);
+        camera.position.set(0.9, 1.75, 3.2); camera.lookAt(0, 1.35, -25);
+
+        // 手机端优先保证稳定性：降低 DPR 与阴影贴图尺寸，避免高分辨率设备把 WebGL framebuffer 放大到过高。
+        const renderDpr = IS_MOBILE_DEVICE ? Math.min(window.devicePixelRatio || 1, 1.25) : Math.min(window.devicePixelRatio || 1, 1.75);
+        renderer = new THREE.WebGLRenderer({ antialias: !IS_MOBILE_DEVICE, powerPreference: 'high-performance', preserveDrawingBuffer: false });
+        renderer.setPixelRatio(renderDpr);
+        renderer.setSize(width, height, false);
+        renderer.domElement.style.width = '100%';
+        renderer.domElement.style.height = '100%';
+        renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;
+        dom.canvasBox.appendChild(renderer.domElement);
+        renderer.domElement.addEventListener('webglcontextlost', (event) => {
+            event.preventDefault();
+            GAME.isPaused = true;
+            showToast('⚠️ 手机图形内存压力过高，正在保护游戏画面……');
+        }, false);
+        renderer.domElement.addEventListener('webglcontextrestored', () => {
+            GAME.isPaused = false;
+            showToast('✅ 图形设备已恢复，继续战斗！');
+        }, false);
+
+        ambLight = new THREE.AmbientLight(STAGE_CONFIGS[0].ambient, 1.1); scene.add(ambLight);
+        dirLight = new THREE.DirectionalLight(STAGE_CONFIGS[0].sunLight, 1.3); dirLight.position.set(20, 35, 15);
+        dirLight.castShadow = true; const shadowSize = IS_MOBILE_DEVICE ? 512 : 1024; dirLight.shadow.mapSize.width = shadowSize; dirLight.shadow.mapSize.height = shadowSize; scene.add(dirLight);
+
+        muzzlePointLight = new THREE.PointLight(0xffaa33, 0, 12); scene.add(muzzlePointLight);
+        scene.add(environmentProps); coverGroup = new THREE.Group(); scene.add(coverGroup);
+
+        buildTacticalBearCharacter();
+        buildAutoTurretModel();
+        initWeatherParticleSystem();
+        applyStageTheme(0);
+        resetCrosshairToCenter();
+    }
+
+    function buildTacticalBearCharacter() {
+        playerGroup = new THREE.Group(); playerGroup.scale.set(0.85, 0.85, 0.85); scene.add(playerGroup);
+        const furMat = new THREE.MeshStandardMaterial({ color: 0x5a341e, roughness: 0.9 });
+        const snoutMat = new THREE.MeshStandardMaterial({ color: 0x8a5832, roughness: 0.8 });
+        const noseMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.3 });
+        const vestMat = new THREE.MeshStandardMaterial({ color: 0x181a1f, roughness: 0.65, metalness: 0.35 });
+        const bandanaMat = new THREE.MeshStandardMaterial({ color: 0xd32f2f, roughness: 0.6 });
+        const weaponMat = new THREE.MeshStandardMaterial({ color: 0x1a1c22, metalness: 0.85, roughness: 0.25 });
+
+        bearTorso = new THREE.Group(); bearTorso.position.set(0, 0.75, 0); playerGroup.add(bearTorso);
+        const belly = new THREE.Mesh(new THREE.SphereGeometry(0.56, 24, 20), furMat); belly.scale.set(1.05, 1.12, 0.98); belly.castShadow = true; bearTorso.add(belly);
+        const vest = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.68, 0.52), vestMat); vest.position.set(0, 0.05, 0); vest.castShadow = true; bearTorso.add(vest);
+
+        bearHead = new THREE.Group(); bearHead.position.set(0, 0.72, 0); bearTorso.add(bearHead);
+        const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.39, 20, 20), furMat); headMesh.scale.set(1.08, 1.0, 1.05); headMesh.castShadow = true; bearHead.add(headMesh);
+        [-1, 1].forEach(side => {
+            const ear = new THREE.Mesh(new THREE.SphereGeometry(0.14, 14, 14), furMat); ear.position.set(side * 0.32, 0.32, 0.02); bearHead.add(ear);
+            const earInner = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 10), snoutMat); earInner.position.set(side * 0.32, 0.32, -0.04); bearHead.add(earInner);
+            const eye = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), noseMat); eye.position.set(side * 0.13, 0.08, -0.35); bearHead.add(eye);
+        });
+        const snout = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 14), snoutMat); snout.scale.set(1.1, 0.85, 1.25); snout.position.set(0, -0.06, -0.32); bearHead.add(snout);
+        const nose = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 10), noseMat); nose.position.set(0, -0.01, -0.5); bearHead.add(nose);
+        const bandanaWrap = new THREE.Mesh(new THREE.TorusGeometry(0.39, 0.05, 8, 24), bandanaMat); bandanaWrap.rotation.x = Math.PI / 2; bandanaWrap.position.set(0, 0.11, 0); bearHead.add(bandanaWrap);
+        bandanaRibbons = []; [-0.06, 0.06].forEach((offset, idx) => {
+            const ribbon = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.42, 0.02), bandanaMat); ribbon.position.set(offset, -0.1, 0.42); ribbon.rotation.x = 0.3; ribbon.rotation.z = (idx === 0 ? -0.25 : 0.25); bearHead.add(ribbon); bandanaRibbons.push(ribbon);
+        });
+
+        const leftArm = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.68, 12), furMat); leftArm.position.set(-0.52, 0.06, -0.15); leftArm.rotation.x = 0.45; bearTorso.add(leftArm);
+        const weaponMount = new THREE.Group(); weaponMount.position.set(0.46, 0.08, -0.36); bearTorso.add(weaponMount);
+
+        // Weapons
+        const gVector = new THREE.Group();
+        const vBody = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.18, 0.46), weaponMat); const vMag = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.28, 0.09), weaponMat); vMag.position.set(0, -0.14, 0.02); vMag.rotation.x = -0.15;
+        const vGrip = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.18, 0.08), weaponMat); vGrip.position.set(0, -0.1, 0.18); vGrip.rotation.x = 0.35;
+        const vBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.25, 8), weaponMat); vBarrel.rotation.x = -Math.PI / 2; vBarrel.position.set(0, 0.04, -0.32);
+        gVector.add(vBody, vMag, vGrip, vBarrel); weaponMount.add(gVector); wepMeshes.vector = gVector;
+
+        const gShotgun = new THREE.Group(); const sBody = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.65), weaponMat); const sBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.55, 8), weaponMat);
+        sBarrel.rotation.x = -Math.PI / 2; sBarrel.position.set(0, 0.02, -0.55); gShotgun.add(sBody, sBarrel); gShotgun.visible = false; weaponMount.add(gShotgun); wepMeshes.shotgun = gShotgun;
+
+        const gRifle = new THREE.Group(); const rBody = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.14, 0.72), weaponMat); const rBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.5, 8), weaponMat);
+        rBarrel.rotation.x = -Math.PI / 2; rBarrel.position.set(0, 0.02, -0.55); const rMag = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.26, 0.14), vestMat); rMag.position.set(0, -0.18, -0.06);
+        gRifle.add(rBody, rBarrel, rMag); gRifle.visible = false; weaponMount.add(gRifle); wepMeshes.rifle = gRifle;
+
+        const gRpg = new THREE.Group(); const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 1.1, 10), weaponMat); tube.rotation.x = -Math.PI / 2;
+        const warhead = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.32, 8), new THREE.MeshStandardMaterial({ color: 0x3d4a37 })); warhead.rotation.x = -Math.PI / 2; warhead.position.set(0, 0, -0.7);
+        gRpg.add(tube, warhead); gRpg.visible = false; weaponMount.add(gRpg); wepMeshes.rpg = gRpg;
+
+        const muzzleTip = new THREE.Object3D(); muzzleTip.name = 'muzzleTip'; muzzleTip.position.set(0, 0.03, -0.85); weaponMount.add(muzzleTip);
+    }
+
+    function buildAutoTurretModel() {
+        turretGroup = new THREE.Group();
+        turretGroup.position.set(0, 0.9, -1.35); // 掩体正中间上方
+        turretGroup.scale.set(0.65, 0.65, 0.65); 
+        turretGroup.visible = false;
+        scene.add(turretGroup);
+
+        const steelMat = new THREE.MeshStandardMaterial({ color: 0x1f242d, metalness: 0.9, roughness: 0.25 });
+        const darkMetal = new THREE.MeshStandardMaterial({ color: 0x111317, metalness: 0.95, roughness: 0.2 });
+        const cyanSensor = new THREE.MeshStandardMaterial({ color: 0x00f0ff, emissive: 0x00e1ff, emissiveIntensity: 1.5 });
+        const brassMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.85, roughness: 0.3 });
+
+        const baseRing = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.35, 0.15, 12), steelMat); baseRing.position.y = 0.08; turretGroup.add(baseRing);
+        [0, 2.094, 4.188].forEach(ang => {
+            const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.45, 0.08), steelMat); leg.position.set(Math.cos(ang) * 0.25, 0.22, Math.sin(ang) * 0.25);
+            leg.rotation.x = Math.sin(ang) * 0.45; leg.rotation.z = -Math.cos(ang) * 0.45; turretGroup.add(leg);
+            const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.04, 8), darkMetal); foot.position.set(Math.cos(ang) * 0.4, 0.02, Math.sin(ang) * 0.4); turretGroup.add(foot);
+        });
+
+        turretHead = new THREE.Group(); turretHead.position.y = 0.58; turretGroup.add(turretHead);
+        const swivelBase = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.26, 0.18, 12), darkMetal); turretHead.add(swivelBase);
+        const gunHousing = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.36, 0.52), steelMat); gunHousing.position.set(0, 0.18, -0.05); turretHead.add(gunHousing);
+        const ammoDrum = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.28, 12), brassMat); ammoDrum.rotation.z = Math.PI / 2; ammoDrum.position.set(0.32, 0.16, 0.02); turretHead.add(ammoDrum);
+        const opticEye = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 12), cyanSensor); opticEye.position.set(0, 0.32, -0.28); turretHead.add(opticEye);
+
+        turretBarrelCluster = new THREE.Group(); turretBarrelCluster.position.set(0, 0.15, -0.42); turretHead.add(turretBarrelCluster);
+        for (let b = 0; b < 6; b++) {
+            const bAng = (b / 6) * Math.PI * 2; const bMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.65, 8), darkMetal);
+            bMesh.rotation.x = -Math.PI / 2; bMesh.position.set(Math.cos(bAng) * 0.09, Math.sin(bAng) * 0.09, -0.2); turretBarrelCluster.add(bMesh);
+        }
+    }
+
+    function buildCoverBarrier(type) {
+        while (coverGroup.children.length > 0) coverGroup.remove(coverGroup.children[0]);
+        coverGroup.position.set(0, 0, -1.35);
+        const metalMat = new THREE.MeshStandardMaterial({ color: 0x7a2219, roughness: 0.7, metalness: 0.4 });
+        const woodMat = new THREE.MeshStandardMaterial({ color: 0x5a3e2b, roughness: 0.95 });
+        const rockMat = new THREE.MeshStandardMaterial({ color: 0x55606d, roughness: 0.9 });
+        const concreteMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.85 });
+        const bikeMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.3 });
+
+        if (type === 'car') {
+            const carBody = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.85, 1.0), metalMat); carBody.position.y = 0.45; carBody.castShadow = true;
+            const windshield = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.45, 0.7), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5 })); windshield.position.set(0, 0.9, -0.1);
+            coverGroup.add(carBody, windshield);
+        } else if (type === 'stump') {
+            const stump = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.05, 0.9, 16), woodMat); stump.position.y = 0.45; stump.castShadow = true; coverGroup.add(stump);
+            [-1.1, 1.1].forEach((rx, idx) => { const root = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 0.6, 10), woodMat); root.position.set(rx, 0.3, -0.15); root.rotation.z = (idx === 0 ? 0.3 : -0.3); coverGroup.add(root); });
+        } else if (type === 'rocks') {
+            for (let i = -2; i <= 2; i++) { const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.5 + Math.random() * 0.15), rockMat); rock.position.set(i * 0.7, 0.45, (Math.random() - 0.5) * 0.2); rock.castShadow = true; coverGroup.add(rock); }
+        } else if (type === 'bunker') {
+            const wall = new THREE.Mesh(new THREE.BoxGeometry(4.0, 0.85, 0.5), concreteMat); wall.position.y = 0.42; wall.castShadow = true;
+            const steelShield = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.45, 0.1), new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8 })); steelShield.position.set(0, 0.85, -0.25);
+            coverGroup.add(wall, steelShield);
+        } else if (type === 'motorcycle') {
+            const frame = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.8, 0.6), bikeMat); frame.position.y = 0.45;
+            const shieldPlate = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.5, 0.1), new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.7 })); shieldPlate.position.set(0, 0.8, -0.3);
+            coverGroup.add(frame, shieldPlate);
+        }
+    }
+
+    function applyStageTheme(stageIdx) {
+        const safeIdx = Math.max(0, Math.min(STAGE_CONFIGS.length - 1, Number(stageIdx) || 0));
+        const cfg = STAGE_CONFIGS[safeIdx];
+        if (!cfg || !scene || !dom.stageNameText) return;
+        scene.background.setHex(cfg.sky); scene.fog.color.setHex(cfg.fog);
+        ambLight.color.setHex(cfg.ambient); dirLight.color.setHex(cfg.sunLight);
+        GAME.currentWeather = cfg.weatherType; dom.weatherBadge.innerText = cfg.weatherName;
+        dom.stageNameText.innerText = GAME.mode === 'ENDLESS' ? `轮回 ${GAME.loopCount + 1} - ${cfg.name}` : cfg.name;
+
+        while (environmentProps.children.length > 0) {
+            const oldObj = environmentProps.children[0];
+            environmentProps.remove(oldObj);
+            oldObj.traverse(obj => {
+                if (obj.geometry && obj.geometry.dispose) obj.geometry.dispose();
+                if (obj.material) {
+                    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+                    mats.forEach(m => { if (m && m.dispose) m.dispose(); });
+                }
+            });
+        }
+        const groundGeo = new THREE.PlaneGeometry(160, 240, 16, 16); const groundMat = new THREE.MeshStandardMaterial({ color: cfg.ground, roughness: 0.95 });
+        const ground = new THREE.Mesh(groundGeo, groundMat); ground.rotation.x = -Math.PI / 2; ground.position.z = -80; ground.receiveShadow = true; environmentProps.add(ground);
+        buildCoverBarrier(cfg.coverType);
+
+        const propMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8 });
+        if (stageIdx === 0) { for (let i = 0; i < 8; i++) { const pillar = new THREE.Mesh(new THREE.BoxGeometry(1.6, 9.0, 1.6), propMat); const side = (i % 2 === 0 ? 1 : -1); pillar.position.set(side * (10 + Math.random() * 5), 4.5, -20 - i * 14); environmentProps.add(pillar); } }
+        else if (stageIdx === 1) { for (let i = 0; i < 10; i++) { const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.45, 6.0, 8), new THREE.MeshStandardMaterial({ color: 0x4a3525 })); const side = (i % 2 === 0 ? 1 : -1); trunk.position.set(side * (9 + Math.random() * 8), 3.0, -15 - i * 12); environmentProps.add(trunk); } }
+        else if (stageIdx === 2) { for (let i = 0; i < 12; i++) { const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(2.5 + Math.random() * 2), new THREE.MeshStandardMaterial({ color: 0x2d3748 })); const side = (i % 2 === 0 ? 1 : -1); rock.position.set(side * (11 + Math.random() * 8), 1.5, -20 - i * 10); environmentProps.add(rock); } }
+        else if (stageIdx === 3) { const tower = new THREE.Mesh(new THREE.BoxGeometry(3.5, 14, 3.5), propMat); tower.position.set(-14, 7, -55); environmentProps.add(tower); const gate = new THREE.Mesh(new THREE.BoxGeometry(16, 6, 1), new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8 })); gate.position.set(0, 3, -80); environmentProps.add(gate); }
+        else if (stageIdx === 4) { for (let i = -3; i <= 3; i++) { const col = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.1, 16, 12), new THREE.MeshStandardMaterial({ color: 0xd1d5db })); col.position.set(i * 4.5, 8, -85); environmentProps.add(col); } const obelisk = new THREE.Mesh(new THREE.ConeGeometry(2.2, 18, 4), new THREE.MeshStandardMaterial({ color: 0x9ca3af })); obelisk.position.set(0, 9, -70); environmentProps.add(obelisk); }
+    }
+
+    function initWeatherParticleSystem() {
+        const geo = new THREE.BufferGeometry(); weatherPosArray = new Float32Array(WEATHER_PARTICLE_COUNT * 3);
+        for (let i = 0; i < WEATHER_PARTICLE_COUNT; i++) { weatherPosArray[i * 3] = (Math.random() - 0.5) * 36; weatherPosArray[i * 3 + 1] = Math.random() * 16; weatherPosArray[i * 3 + 2] = -Math.random() * 60; }
+        geo.setAttribute('position', new THREE.BufferAttribute(weatherPosArray, 3));
+        const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.16, transparent: true, opacity: 0.6 });
+        weatherParticles = new THREE.Points(geo, mat); scene.add(weatherParticles);
+    }
+
+    function updateWeather(delta) {
+        if (!weatherParticles) return;
+        const pos = weatherParticles.geometry.attributes.position.array; const weather = GAME.currentWeather;
+        for (let i = 0; i < WEATHER_PARTICLE_COUNT; i++) {
+            const idx = i * 3;
+            if (weather === 'windy') { pos[idx] += 22.0 * delta; pos[idx + 1] -= 1.5 * delta; if (pos[idx] > 18) pos[idx] = -18; if (pos[idx + 1] < 0) pos[idx + 1] = 16; }
+            else if (weather === 'drizzle') { pos[idx] += 2.0 * delta; pos[idx + 1] -= 26.0 * delta; if (pos[idx + 1] < 0) { pos[idx + 1] = 16; pos[idx] = (Math.random() - 0.5) * 36; } }
+            else if (weather === 'snow') { pos[idx] += Math.sin(clock.getElapsedTime() * 2 + i) * 1.4 * delta; pos[idx + 1] -= 3.2 * delta; if (pos[idx + 1] < 0) { pos[idx + 1] = 16; pos[idx] = (Math.random() - 0.5) * 36; } }
+            else { pos[idx] += 1.0 * delta; if (pos[idx] > 18) pos[idx] = -18; }
+        }
+        weatherParticles.geometry.attributes.position.needsUpdate = true;
+        if (weather === 'dry_lightning') {
+            GAME.lightningTimer -= delta;
+            if (GAME.lightningTimer <= 0) { GAME.lightningTimer = 4.5 + Math.random() * 5.0; audio.playThunder(); dom.lightningOverlay.style.opacity = '1'; dirLight.intensity = 3.6; setTimeout(() => { dom.lightningOverlay.style.opacity = '0'; dirLight.intensity = 1.3; }, 90); }
+        }
+    }
+
+    class EnemyEntity {
+        constructor(config) {
+            this.mesh = new THREE.Group(); this.mesh.position.copy(config.pos); this.mesh.userData = { entity: this }; scene.add(this.mesh);
+            this.type = config.type || 'zombie';
+            this.maxHp = config.hp * GAME.difficultyScale * (this.type === 'fast_zombie' ? 0.6 : 1.0);
+            this.hp = this.maxHp;
+            this.isAlive = true; this.isBoss = config.isBoss || false;
+
+            let baseSpeed = 1.35;
+            if (this.isBoss && GAME.stage === 1) baseSpeed = 1.70;
+            else if (this.type === 'fast_zombie') baseSpeed = 3.2; 
+            else if (this.type === 'human_soldier') baseSpeed = 2.5 + Math.random() * 1.5; 
+            else if (config.speed) baseSpeed = config.speed;
+            this.speed = baseSpeed * (1 + GAME.loopCount * 0.1);
+
+            // 第四关士兵必须保持在玩家可稳定瞄准的横向战场范围内，避免出生在屏幕边缘后长期处于不可攻击区域。
+            this.spawnX = this.type === 'human_soldier' ? THREE.MathUtils.clamp(config.pos.x, -7.2, 7.2) : config.pos.x;
+            this.spawnZ = config.pos.z; this.targetX = this.type === 'human_soldier' ? THREE.MathUtils.clamp((Math.random() - 0.5) * 8.5, -4.25, 4.25) : (Math.random() - 0.5) * 2.2;
+            this.walkCycle = Math.random() * Math.PI * 2; this.attackTimer = 0;
+            this.isStunned = false; this.stunTimer = 0; this.stunCrown = null;
+
+            this.soldierAimTimer = 0; this.soldierState = 'move'; this.soldierLaserMesh = null;
+            this.soldierRole = 'rifle';
+            if (this.type === 'human_soldier') {
+                // 第四关明确分成三种交战距离：约30%远距离、40%中距离、30%近距离。
+                // 远距离士兵不会继续向掩体靠近；中距离士兵在中线停下；只有近距离突击兵才会压到前线。
+                const roleRoll = Math.random();
+                if (roleRoll < 0.30) {
+                    this.soldierRole = 'sniper';
+                    this.stopZ = -29 - Math.random() * 4;       // 远距离：约 -29 ~ -33
+                    this.soldierFireInterval = 3.2 + Math.random() * 1.4;
+                } else if (roleRoll < 0.70) {
+                    this.soldierRole = 'rifle';
+                    this.stopZ = -19 - Math.random() * 4;       // 中距离：约 -19 ~ -23
+                    this.soldierFireInterval = 2.6 + Math.random() * 1.0;
+                } else {
+                    this.soldierRole = 'rusher';
+                    this.stopZ = -9 - Math.random() * 3;        // 近距离：约 -9 ~ -12
+                    this.soldierFireInterval = 2.0 + Math.random() * 0.8;
+                }
+                this.isRusher = this.soldierRole === 'rusher' && Math.random() < 0.75;
+                if (this.isRusher) this.stopZ = Math.max(this.stopZ, -11.5);
+                this.grenadeTimer = 3.5 + Math.random() * 2.0;
+            }
+
+            this.isBerserk = false;
+            this.tyrantBombTimer = 3.0;
+
+            this.tankCannonTimer = 10.5 + Math.random() * 2.5; this.tankCannonCharging = false; this.tankMGTimer = 0.8 + Math.random() * 0.8; this.tankWeaponPause = 0;
+            
+            this.ufoShield = 6000 * GAME.difficultyScale; this.ufoMaxShield = this.ufoShield; this.ufoShieldBroken = false; 
+            this.ufoChargingLaser = false; this.ufoLaserTimer = 6.5; this.ufoBerserk = false; this.ufoTeleportTimer = 2.4;
+            this.ufoSummonTimer = 10.0; 
+
+            this.shootCooldown = (this.type === 'flying_dragon') ? 1.8 + Math.random() * 0.6 : 2.5 + Math.random() * 1.5;
+            this.bossWeaveDir = 1; this.bossWeaveTimer = 0; this.leftWing = null; this.rightWing = null;
+
+            this.buildModel(); enemies.push(this);
+        }
+
+        buildModel() {
+            if (this.isBoss) { this.buildBossModel(); return; }
+
+            const rotSkinMat = new THREE.MeshStandardMaterial({ color: 0x3d4a3c, roughness: 0.95 });
+            if (this.type === 'fast_zombie') rotSkinMat.color.setHex(0xb91c1c); 
+            const decayedCloth = new THREE.MeshStandardMaterial({ color: 0x24282c, roughness: 0.95 });
+            const boneMat = new THREE.MeshStandardMaterial({ color: 0xdcd8c8, roughness: 0.7 });
+            const gunMat = new THREE.MeshStandardMaterial({ color: 0x1f242b, metalness: 0.85, roughness: 0.3 });
+            const weakpointMat = new THREE.MeshStandardMaterial({ color: 0xffea00, emissive: 0xffaa00, emissiveIntensity: 1.4 });
+
+            if (this.type === 'flying_dragon') {
+                this.mesh.scale.set(1.2, 1.2, 1.2); const dragonSkin = new THREE.MeshStandardMaterial({ color: 0x8a1c1c, roughness: 0.8 }); const dragonBelly = new THREE.MeshStandardMaterial({ color: 0xb53828, roughness: 0.7 });
+                const dHead = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.75, 6), dragonSkin); dHead.rotation.x = -Math.PI / 2; dHead.position.set(0, 0.1, -0.6); this.mesh.add(dHead);
+                [-0.14, 0.14].forEach(hx => { const horn = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.35, 5), boneMat); horn.position.set(hx, 0.28, -0.45); horn.rotation.x = -0.5; this.mesh.add(horn); });
+                const dBody = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.2, 1.5, 8), dragonBelly); dBody.rotation.x = Math.PI / 2; this.mesh.add(dBody);
+                const dTail = new THREE.Mesh(new THREE.ConeGeometry(0.18, 1.2, 6), dragonSkin); dTail.rotation.x = Math.PI / 2; dTail.position.set(0, 0, 1.2); this.mesh.add(dTail);
+                this.leftWing = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.04, 0.7), dragonSkin); this.leftWing.position.set(-0.95, 0.2, 0); this.rightWing = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.04, 0.7), dragonSkin); this.rightWing.position.set(0.95, 0.2, 0); this.mesh.add(this.leftWing, this.rightWing);
+                const dWeak = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), weakpointMat); dWeak.position.set(0, -0.05, -0.52); dWeak.userData = { entity: this, isWeakpoint: true }; this.mesh.add(dWeak);
+            } else if (this.type === 'alien_trooper') {
+                this.mesh.scale.set(1.25, 1.25, 1.25); const alienMat = new THREE.MeshStandardMaterial({ color: 0x1f3b34, roughness: 0.6, metalness: 0.4 }); const cyberArmor = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.85, roughness: 0.25 });
+                const aHead = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.8, 8), alienMat); aHead.rotation.x = 0.5; aHead.position.set(0, 1.35, 0.08); this.mesh.add(aHead);
+                const aWeak = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 8), weakpointMat); aWeak.position.set(0, 1.42, 0.18); aWeak.userData = { entity: this, isWeakpoint: true }; this.mesh.add(aWeak);
+                const aTorso = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.16, 0.9, 8), cyberArmor); aTorso.position.y = 0.75; this.mesh.add(aTorso);
+                const ring = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.04, 6, 16), new THREE.MeshStandardMaterial({ color: 0x06b6d4, emissive: 0x0891b2 })); ring.rotation.x = Math.PI / 2; ring.position.y = 0.4; this.mesh.add(ring);
+                const laserGun = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.65), gunMat); laserGun.position.set(0.35, 0.75, -0.32); this.mesh.add(laserGun);
+            } else {
+                this.mesh.scale.set(1.3, 1.3, 1.3); const torsoMat = (this.type === 'human_soldier') ? new THREE.MeshStandardMaterial({ color: 0x27323f, roughness: 0.7 }) : decayedCloth;
+                this.torso = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.85, 0.42), torsoMat); this.torso.position.y = 0.9; this.torso.rotation.x = (this.type === 'zombie' || this.type === 'fast_zombie' ? 0.25 : 0.05); this.torso.userData = { entity: this, isHead: false }; this.mesh.add(this.torso);
+                this.head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 12), (this.type === 'human_soldier' ? new THREE.MeshStandardMaterial({ color: 0x334155 }) : rotSkinMat)); this.head.position.set(0, 0.62, (this.type === 'zombie' || this.type === 'fast_zombie' ? 0.12 : 0.04)); this.torso.add(this.head);
+                const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.22), rotSkinMat); jaw.position.set(0, -0.16, 0.12); this.head.add(jaw);
+                const weakNode = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 10), weakpointMat); weakNode.position.set(0, 0.08, 0.22); weakNode.userData = { entity: this, isWeakpoint: true }; this.head.add(weakNode);
+                [-0.42, 0.42].forEach((armX, idx) => {
+                    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.65, 0.16), (this.type === 'human_soldier' ? torsoMat : rotSkinMat)); arm.position.set(armX, 0.15, 0.25); arm.rotation.x = (this.type === 'zombie' || this.type === 'fast_zombie' ? -1.3 : -0.7); arm.rotation.z = (idx === 0 ? 0.15 : -0.15); this.torso.add(arm);
+                });
+                if (this.type === 'cyborg_soldier' || this.type === 'human_soldier') {
+                    const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.72), gunMat); rifle.position.set(0.38, 0.12, -0.25); this.torso.add(rifle);
+                }
+                const hitCyl = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.65, 2.0, 10), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 }));
+                hitCyl.position.y = 0.9; hitCyl.userData = { entity: this, isHead: false, isWeakpoint: false }; this.mesh.add(hitCyl);
+            }
+        }
+
+        buildBossModel() {
+            const st = GAME.stage; const bossWeakMat = new THREE.MeshStandardMaterial({ color: 0xffea00, emissive: 0xffaa00, emissiveIntensity: 1.8 });
+            if (st === 1) {
+                this.mesh.scale.set(2.4, 2.4, 2.4); const skinMat = new THREE.MeshStandardMaterial({ color: 0x364635, roughness: 0.85 }); const boneMat = new THREE.MeshStandardMaterial({ color: 0xc8c3b2, roughness: 0.6 });
+                this.torso = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.35, 0.75), skinMat); this.torso.position.y = 1.15; this.mesh.add(this.torso);
+                const bigArm = new THREE.Mesh(new THREE.BoxGeometry(0.65, 1.25, 0.65), skinMat); bigArm.position.set(0.85, 0.1, 0.25); bigArm.rotation.x = -0.5; this.torso.add(bigArm);
+                [-0.45, 0.45].forEach(spX => { const spike = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.6, 6), boneMat); spike.position.set(spX, 0.75, -0.15); this.torso.add(spike); });
+                this.head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 12), skinMat); this.head.position.set(0, 0.88, 0.12); this.torso.add(this.head);
+                this.stunCrown = new THREE.Group(); this.stunCrown.position.set(0, 1.45, 0); this.stunCrown.visible = false;
+                for (let s = 0; s < 4; s++) { const ang = (s / 4) * Math.PI * 2; const star = new THREE.Mesh(new THREE.DodecahedronGeometry(0.08), bossWeakMat); star.position.set(Math.cos(ang) * 0.45, 0, Math.sin(ang) * 0.45); this.stunCrown.add(star); }
+                this.torso.add(this.stunCrown);
+                const coreWeak = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 12), bossWeakMat); coreWeak.position.set(0, 0.25, 0.42); coreWeak.userData = { entity: this, isWeakpoint: true }; this.torso.add(coreWeak);
+            } else if (st === 2) {
+                this.mesh.scale.set(3.4, 3.4, 3.4); this.mesh.position.y = 6.5;
+                const dBody = new THREE.Mesh(new THREE.ConeGeometry(0.65, 2.4, 8), new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.7 })); dBody.rotation.x = Math.PI / 2; this.mesh.add(dBody);
+                this.head = new THREE.Mesh(new THREE.SphereGeometry(0.48, 10, 10), new THREE.MeshStandardMaterial({ color: 0xd97706 })); this.head.position.set(0, 0.1, -1.35); this.mesh.add(this.head);
+                this.leftWing = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.08, 1.2), new THREE.MeshStandardMaterial({ color: 0xb91c1c })); this.leftWing.position.set(-1.4, 0.2, 0);
+                this.rightWing = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.08, 1.2), new THREE.MeshStandardMaterial({ color: 0xb91c1c })); this.rightWing.position.set(1.4, 0.2, 0); this.mesh.add(this.leftWing, this.rightWing);
+                const dragonWeak = new THREE.Mesh(new THREE.SphereGeometry(0.38, 10, 10), bossWeakMat); dragonWeak.position.set(0, -0.22, -1.25); dragonWeak.userData = { entity: this, isWeakpoint: true }; this.mesh.add(dragonWeak);
+            } else if (st === 3) {
+                this.mesh.scale.set(2.5, 2.5, 2.5); const armorMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, metalness: 0.85 });
+                this.torso = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.4, 0.8), armorMat); this.torso.position.y = 1.2; this.mesh.add(this.torso);
+                this.head = new THREE.Mesh(new THREE.SphereGeometry(0.38, 12, 12), new THREE.MeshStandardMaterial({ color: 0x475569 })); this.head.position.set(0, 0.9, 0.1); this.torso.add(this.head);
+                const tyrantWeak = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.18, 12), bossWeakMat); tyrantWeak.rotation.x = Math.PI / 2; tyrantWeak.position.set(0, 0.25, 0.42); tyrantWeak.userData = { entity: this, isWeakpoint: true }; this.torso.add(tyrantWeak);
+                const gatling = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 1.3, 10), new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9 })); gatling.rotation.x = -Math.PI / 2; gatling.position.set(0.8, 0.4, -0.6); this.torso.add(gatling);
+            } else if (st === 4) {
+                this.mesh.scale.set(3.8, 3.8, 3.8); const tankMat = new THREE.MeshStandardMaterial({ color: 0x242a35, metalness: 0.88, roughness: 0.25 }); const treadMat = new THREE.MeshStandardMaterial({ color: 0x111317, metalness: 0.95 });
+                [-1.3, 1.3].forEach(tx => { const tread = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.65, 3.6), treadMat); tread.position.set(tx, 0.35, 0); this.mesh.add(tread); });
+                const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.75, 3.4), tankMat); chassis.position.y = 0.55; this.mesh.add(chassis);
+                this.tankTurret = new THREE.Group(); this.tankTurret.position.set(0, 1.15, -0.1); this.mesh.add(this.tankTurret);
+                const tHousing = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.65, 1.8), tankMat); this.tankTurret.add(tHousing);
+                const cannon1 = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 3.2, 12), tankMat); cannon1.rotation.x = -Math.PI / 2; cannon1.position.set(-0.35, 0.05, -1.9);
+                const cannon2 = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 3.2, 12), tankMat); cannon2.rotation.x = -Math.PI / 2; cannon2.position.set(0.35, 0.05, -1.9);
+                this.tankTurret.add(cannon1, cannon2);
+                const coaxMG = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.2, 8), treadMat); coaxMG.rotation.x = -Math.PI / 2; coaxMG.position.set(0, -0.2, -1.1); this.tankTurret.add(coaxMG);
+                const tankWeak = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.22, 0.75), bossWeakMat); tankWeak.position.set(0, 0.42, 0.3); tankWeak.userData = { entity: this, isWeakpoint: true }; this.tankTurret.add(tankWeak);
+            } else if (st === 5) {
+                this.mesh.scale.set(3.8, 3.8, 3.8); this.mesh.position.y = 7.5;
+                const saucer = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 1.0, 0.6, 20), new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9, roughness: 0.2 })); this.mesh.add(saucer);
+                const ufoWeak = new THREE.Mesh(new THREE.SphereGeometry(0.9, 16, 16), bossWeakMat); ufoWeak.position.set(0, 0.35, 0); ufoWeak.userData = { entity: this, isWeakpoint: true }; this.mesh.add(ufoWeak);
+                const shieldMat = new THREE.MeshStandardMaterial({ color: 0x00f0ff, emissive: 0x00a8ff, emissiveIntensity: 1.2, transparent: true, opacity: 0.55, wireframe: true });
+                this.ufoShieldMesh = new THREE.Mesh(new THREE.SphereGeometry(2.6, 24, 20), shieldMat); this.mesh.add(this.ufoShieldMesh);
+            }
+            const bossHitSphere = new THREE.Mesh(new THREE.SphereGeometry(2.4, 12, 12), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 }));
+            bossHitSphere.position.y = 1.0; bossHitSphere.userData = { entity: this, isHead: false, isWeakpoint: false }; this.mesh.add(bossHitSphere);
+        }
+
+        update(delta) {
+            if (!this.isAlive) {
+                this.mesh.position.y -= delta * 3.5; this.mesh.rotation.x -= delta * 2.0;
+                if (this.mesh.position.y < -4) this.destroy();
+                return;
+            }
+            if (this.isBoss) { this.updateBossLogic(delta); return; }
+            if (this.type === 'flying_dragon' && this.leftWing && this.rightWing) { const flap = Math.sin(clock.getElapsedTime() * 9) * 0.45; this.leftWing.rotation.z = flap; this.rightWing.rotation.z = -flap; }
+
+            if (GAME.stage === 4 && this.type === 'human_soldier') { this.updateStage4RifleSoldier(delta); return; }
+
+            if (this.type === 'flying_dragon' || this.type === 'alien_trooper') {
+                this.mesh.position.z += this.speed * delta;
+                this.mesh.position.y = 4.5 + Math.sin(clock.getElapsedTime() * 3 + this.mesh.id) * 0.8;
+                const progress = Math.min(1.0, Math.max(0, (this.mesh.position.z - this.spawnZ) / (-1.5 - this.spawnZ)));
+                this.mesh.position.x = THREE.MathUtils.lerp(this.spawnX, this.targetX, progress) + Math.sin(clock.getElapsedTime() * 2) * 0.4;
+
+                this.shootCooldown -= delta;
+                if (this.shootCooldown <= 0 && this.mesh.position.z < -6) {
+                    this.shootCooldown = (this.type === 'flying_dragon' ? 1.8 + Math.random() * 0.6 : 3.0 + Math.random() * 1.5);
+                    new ProjectileOrb(this.mesh.position.clone(), (this.type === 'flying_dragon' ? 'fire' : 'laser'));
+                }
+            } else {
+                this.mesh.position.z += this.speed * delta;
+                const progress = Math.min(1.0, Math.max(0, (this.mesh.position.z - this.spawnZ) / (-1.5 - this.spawnZ)));
+                const smoothT = progress * progress * (3 - 2 * progress);
+                this.mesh.position.x = THREE.MathUtils.lerp(this.spawnX, this.targetX, smoothT);
+
+                if (this.type === 'cyborg_soldier' && this.mesh.position.z < -6) {
+                    this.shootCooldown -= delta;
+                    if (this.shootCooldown <= 0) { this.shootCooldown = 4.5 + Math.random() * 2.0; new ProjectileOrb(this.mesh.position.clone().add(new THREE.Vector3(0, 1.2, 0)), 'bullet'); }
+                }
+
+                if (this.mesh.position.z >= -1.5) {
+                    this.mesh.position.z = -1.5; this.attackTimer += delta;
+                    if (this.attackTimer >= 0.8) { this.attackTimer = 0; audio.playZombieClaw(); applyPlayerDamage(12); }
+                    return;
+                }
+                this.walkCycle += delta * (this.type === 'fast_zombie' ? 7.5 : 4.5);
+                if (this.torso) { this.torso.rotation.z = Math.sin(this.walkCycle) * 0.08; this.torso.position.y = 0.9 + Math.abs(Math.sin(this.walkCycle)) * 0.06; }
+            }
+        }
+
+        updateStage4RifleSoldier(delta) {
+            // 横向软边界：即使受到击退/随机位移，也绝不跑出可瞄准区域。
+            this.mesh.position.x = THREE.MathUtils.clamp(this.mesh.position.x, -8.0, 8.0);
+
+            if (this.mesh.position.z < this.stopZ) {
+                this.mesh.position.z += this.speed * delta;
+                this.mesh.position.x = THREE.MathUtils.lerp(this.mesh.position.x, this.targetX, Math.min(1, delta * 0.8));
+                this.walkCycle += delta * 6.5;
+                return;
+            }
+
+            if (this.isRusher) {
+                this.grenadeTimer -= delta;
+                if (this.grenadeTimer <= 0) {
+                    this.grenadeTimer = 4.0 + Math.random() * 1.5;
+                    showCenterAlert("⚠️ 敌军突击兵投掷了高爆手雷！无视掩体！");
+                    new ProjectileOrb(this.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0)), 'grenade');
+                }
+            }
+
+            if (this.soldierState === 'move') {
+                this.soldierState = 'aiming';
+                this.soldierAimTimer = 0;
+            }
+
+            if (this.soldierState === 'aiming') {
+                // 不再要求玩家必须靠近。只要玩家探身，所有距离类型的士兵都可以开始瞄准。
+                if (GAME.poseFactor > 0.4) {
+                    this.soldierAimTimer += delta;
+                    const roleText = this.soldierRole === 'sniper' ? '远距离狙击手' : (this.soldierRole === 'rifle' ? '中距离步枪兵' : '近距离突击兵');
+                    showCenterAlert(`⚠️ ${roleText}瞄准锁定中！(快缩回掩体格挡)`);
+                    this.updateSoldierLaser(true);
+                    const aimTime = this.soldierRole === 'sniper' ? 1.45 : (this.soldierRole === 'rifle' ? 1.05 : 0.78);
+                    if (this.soldierAimTimer >= aimTime) {
+                        this.soldierState = 'cooldown';
+                        this.soldierAimTimer = 0;
+                        this.updateSoldierLaser(false);
+                        audio.playRifle();
+                        const spawnPos = this.mesh.position.clone().add(new THREE.Vector3(0.38, 1.1, -0.25));
+                        new ProjectileOrb(spawnPos, 'bullet');
+                    }
+                } else {
+                    this.soldierAimTimer = Math.max(0, this.soldierAimTimer - delta * 1.5);
+                    if (this.soldierAimTimer === 0) {
+                        this.updateSoldierLaser(false);
+                        hideCenterAlert();
+                    }
+                }
+            } else if (this.soldierState === 'cooldown') {
+                this.soldierAimTimer += delta;
+                if (this.soldierAimTimer >= this.soldierFireInterval) {
+                    this.soldierState = 'aiming';
+                    this.soldierAimTimer = 0;
+                }
+            }
+        }
+
+        updateSoldierLaser(active) {
+            if (!active) { if (this.soldierLaserMesh) { safeRemoveObject3D(this.soldierLaserMesh, true); this.soldierLaserMesh = null; } return; }
+            const start = this.mesh.position.clone().add(new THREE.Vector3(0.38, 1.1, -0.25)); const target = new THREE.Vector3(0, 1.0, -1.2);
+            const dir = target.clone().sub(start); const len = dir.length();
+            if (!this.soldierLaserMesh) {
+                const geo = new THREE.CylinderGeometry(0.015, 0.015, len, 6); const mat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.85 });
+                this.soldierLaserMesh = new THREE.Mesh(geo, mat); scene.add(this.soldierLaserMesh);
+            }
+            this.soldierLaserMesh.scale.set(1, len, 1);
+            if (dir.lengthSq() > 0.001) this.soldierLaserMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+            this.soldierLaserMesh.position.copy(start.clone().add(dir.multiplyScalar(0.5)));
+        }
+
+        updateBossLogic(delta) {
+            const st = GAME.stage;
+            if (this.isStunned) {
+                this.stunTimer -= delta;
+                if (this.stunCrown) { this.stunCrown.visible = true; this.stunCrown.rotation.y += delta * 6.0; }
+                if (this.torso) this.torso.rotation.z = Math.sin(clock.getElapsedTime() * 14) * 0.12;
+                if (this.stunTimer <= 0) { this.isStunned = false; if (this.stunCrown) this.stunCrown.visible = false; showCenterAlert("⚠️ BOSS苏醒，继续狂暴冲锋！"); }
+                return;
+            }
+
+            if (st === 1) {
+                if (this.mesh.position.z < -3.5) { this.mesh.position.z += this.speed * delta; this.walkCycle += delta * 5.5; if (this.torso) this.torso.position.y = 1.15 + Math.abs(Math.sin(this.walkCycle)) * 0.08; }
+                else { this.attackTimer += delta; if (this.attackTimer >= 0.9) { this.attackTimer = 0; audio.playZombieClaw(); applyPlayerDamage(24); } }
+                this.shootCooldown -= delta; if (this.shootCooldown <= 0) { this.shootCooldown = 3.0; new ProjectileOrb(this.mesh.position.clone().add(new THREE.Vector3(0, 3.0, 0)), 'acid'); }
+            } else if (st === 2) {
+                this.bossWeaveTimer += delta; this.mesh.position.x = Math.sin(this.bossWeaveTimer * 1.35) * 8.2; this.mesh.position.y = 6.2 + Math.cos(this.bossWeaveTimer * 2.0) * 1.2;
+                if (this.leftWing && this.rightWing) { const flap = Math.sin(clock.getElapsedTime() * 8) * 0.45; this.leftWing.rotation.z = flap; this.rightWing.rotation.z = -flap; }
+                
+                this.shootCooldown -= delta; 
+                if (this.shootCooldown <= 0) { 
+                    this.shootCooldown = 1.2 + Math.random() * 0.5; 
+                    new ProjectileOrb(this.mesh.position.clone(), 'fire'); 
+                    new ProjectileOrb(this.mesh.position.clone().add(new THREE.Vector3(-1.8, 0, 0)), 'fire'); 
+                    new ProjectileOrb(this.mesh.position.clone().add(new THREE.Vector3(1.8, 0, 0)), 'fire'); 
+                }
+            } else if (st === 3) {
+                if (this.mesh.position.z < -15) {
+                    this.mesh.position.z += this.speed * delta;
+                } else if (this.isBerserk && this.mesh.position.z < -6) {
+                    this.mesh.position.z += this.speed * delta;
+                }
+                
+                this.shootCooldown -= delta; if (this.shootCooldown <= 0) { this.shootCooldown = 2.4 + Math.random() * 0.6; new ProjectileOrb(this.mesh.position.clone().add(new THREE.Vector3(0.8, 1.6, -1.0)), 'gatling'); }
+                
+                this.tyrantBombTimer -= delta; 
+                if (this.tyrantBombTimer <= 0) { 
+                    this.tyrantBombTimer = this.isBerserk ? 2.5 : 4.0; 
+                    showCenterAlert("☣️ 暴君投掷了高爆病毒炸弹！"); 
+                    new ProjectileOrb(this.mesh.position.clone().add(new THREE.Vector3(-0.6, 2.0, -0.5)), 'grenade'); 
+                    if (this.isBerserk) new ProjectileOrb(this.mesh.position.clone().add(new THREE.Vector3(0.6, 2.0, -0.5)), 'grenade'); 
+                }
+            } else if (st === 4) {
+                // 第四关坦克保持远距离阵地，不再向玩家开进。仅在远方左右横移，形成持续压制火力。
+                this.bossWeaveTimer += delta;
+                const tankCenterZ = -42;
+                const tankRangeX = 7.5;
+                this.mesh.position.z = tankCenterZ + Math.sin(this.bossWeaveTimer * 0.42) * 2.0;
+                this.mesh.position.x = Math.sin(this.bossWeaveTimer * 0.72) * tankRangeX;
+                this.mesh.position.x = THREE.MathUtils.clamp(this.mesh.position.x, -8.0, 8.0);
+                if (this.tankTurret) {
+                    // 炮塔略微跟随横向运动方向，保持“远方移动射击”的感觉，不改变弱点位置。
+                    const desiredYaw = Math.sin(this.bossWeaveTimer * 0.72) * 0.16;
+                    this.tankTurret.rotation.y = THREE.MathUtils.lerp(this.tankTurret.rotation.y, desiredYaw, delta * 2.5);
+                }
+
+                if (this.tankWeaponPause > 0) {
+                    this.tankWeaponPause -= delta;
+                } else {
+                    // 机枪由极短连射改为较慢点射，降低屏幕压迫感和攻击频率。
+                    this.tankMGTimer -= delta;
+                    if (this.tankMGTimer <= 0 && !this.tankCannonCharging) {
+                        this.tankMGTimer = 0.32 + Math.random() * 0.18;
+                        if (Math.random() < 0.35) audio.playRifle();
+                        const mgPos = this.mesh.position.clone().add(new THREE.Vector3((Math.random()-0.5)*0.8, 4.2, -3.8));
+                        new ProjectileOrb(mgPos, 'bullet');
+                    }
+
+                    // 主炮周期明显拉长：约10.5~13秒一发，并保留蓄力预警。
+                    this.tankCannonTimer -= delta;
+                    if (this.tankCannonTimer <= 2.0 && !this.tankCannonCharging) {
+                        this.tankCannonCharging = true;
+                        showCenterAlert("⚠️ 远方坦克主炮正在蓄力！立刻缩回掩体！");
+                    }
+                    if (this.tankCannonTimer <= 0) {
+                        this.tankCannonTimer = 10.5 + Math.random() * 2.5;
+                        this.tankCannonCharging = false;
+                        audio.playTankCannon();
+                        const cannonPos = this.mesh.position.clone().add(new THREE.Vector3(0, 4.0, -6.5));
+                        new ProjectileOrb(cannonPos, 'tank_shell');
+                    }
+                }
+            } else if (st === 5) {
+                if (dom.bossShieldBox.classList.contains('hidden') && !this.ufoShieldBroken) dom.bossShieldBox.classList.remove('hidden');
+                const sPct = Math.max(0, this.ufoShield / this.ufoMaxShield); dom.bossShieldBar.style.width = `${sPct * 100}%`; dom.bossShieldPct.innerText = `${Math.round(sPct * 100)}%`;
+                
+                this.ufoLaserTimer -= delta;
+                if (this.ufoLaserTimer <= 4.0 && !this.ufoChargingLaser) { this.ufoChargingLaser = true; if (this.ufoShield > 0) { showCenterAlert("⚡ 飞碟等离子激光蓄能！护盾弱点暴露，全力集火破盾！"); if (this.ufoShieldMesh) this.ufoShieldMesh.material.color.setHex(0xffea00); } else { showCenterAlert("⚠️ 飞碟巨型离子炮即将发射！立刻缩回掩体！"); } }
+                if (this.ufoLaserTimer <= 0) { this.ufoLaserTimer = 6.5; this.ufoChargingLaser = false; if (this.ufoShieldMesh) this.ufoShieldMesh.material.color.setHex(0x00f0ff); triggerIonBeam(this.mesh.position); }
+                
+                if (this.ufoBerserk) { this.ufoTeleportTimer -= delta; if (this.ufoTeleportTimer <= 0) { this.ufoTeleportTimer = 2.4 + Math.random() * 0.8; this.teleportUFO(); } }
+                else { this.bossWeaveTimer += delta; this.mesh.position.x = Math.sin(this.bossWeaveTimer * 0.85) * 6.5; }
+                this.mesh.rotation.y += delta * 1.2;
+
+                this.ufoSummonTimer -= delta;
+                if (this.ufoSummonTimer <= 0) {
+                    this.ufoSummonTimer = 10.0;
+                    showCenterAlert("🛸 飞碟召唤了外星援军降临战场！");
+                    for (let m = 0; m < 2; m++) {
+                        new EnemyEntity({ pos: new THREE.Vector3((m === 0 ? -8 : 8), 5.5, -35), type: 'alien_trooper', hp: 140, speed: 1.6 });
+                    }
+                }
+            }
+        }
+
+        teleportUFO() {
+            audio.playTeleport(); spawnImpactSparks(this.mesh.position, 0x00ffff, 25);
+            this.mesh.position.x = (Math.random() - 0.5) * 14; this.mesh.position.y = 6.0 + Math.random() * 2.5;
+            spawnImpactSparks(this.mesh.position, 0x00ffff, 25); showCenterAlert("⚡ 飞碟瞬移闪避！调整枪线瞄准！");
+        }
+
+        takeDamage(amount, isWeakpoint, hitPoint) {
+            if (!this.isAlive) return;
+            if (this.isBoss && GAME.stage === 5 && !this.ufoShieldBroken) {
+                if (!this.ufoChargingLaser) { createFloatingDamageText("SHIELD IMMUNE", false, hitPoint); audio.playCoverDeflect(); spawnImpactSparks(hitPoint, 0x00f0ff, 6); return; }
+                else {
+                    const shieldDmg = isWeakpoint ? amount * 3.5 : amount; this.ufoShield = Math.max(0, this.ufoShield - shieldDmg);
+                    createFloatingDamageText(`SHIELD -${Math.round(shieldDmg)}`, true, hitPoint); audio.playCritHit(); spawnImpactSparks(hitPoint, 0x00f0ff, 15);
+                    if (this.ufoShield <= 0) {
+                        this.ufoShieldBroken = true; this.ufoBerserk = true; if (this.ufoShieldMesh) { safeRemoveObject3D(this.ufoShieldMesh, true); this.ufoShieldMesh = null; } dom.bossShieldBox.classList.add('hidden');
+                        showCenterAlert("💥 飞碟护盾破除！进入狂暴瞬移状态，集火真身！"); audio.playBombExplosion();
+                    }
+                    return;
+                }
+            }
+
+            let finalDamage = amount;
+            if (isWeakpoint) {
+                GAME.stageCrits++; finalDamage = (!this.isBoss) ? Math.max(999, this.hp) : Math.round(amount * 3.5);
+                audio.playCritHit(); createFloatingDamageText(finalDamage, true, hitPoint); spawnImpactSparks(hitPoint, 0xffea00, 20);
+                
+                if (GAME.stage === 4) {
+                    this.tankWeaponPause = 2.0;
+                    spawnImpactSparks(hitPoint, 0xffa500, 15);
+                }
+            } else {
+                audio.playZombieHit(); createFloatingDamageText(finalDamage, false, hitPoint); spawnImpactSparks(hitPoint, 0xef4444, 8);
+            }
+
+            // 【第一关BOSS连续受击击退修改，彻底取消眩晕】
+            if (this.isBoss && GAME.stage === 1) {
+                // 大幅提升击退距离 (普通0.3，弱点3.0)，只要连续射击BOSS就会被推回
+                this.mesh.position.z = Math.max(-50, this.mesh.position.z - (isWeakpoint ? 3.0 : 0.3));
+            }
+
+            this.hp -= finalDamage;
+            if (this.isBoss) {
+                const pct = Math.max(0, this.hp / this.maxHp); dom.bossHpBar.style.width = `${pct * 100}%`; dom.bossHpPct.innerText = `${Math.round(pct * 100)}%`;
+                
+                const currentTier = Math.floor(pct / 0.25);
+                if (this.thresholdIdx === undefined) this.thresholdIdx = 4;
+                
+                if (currentTier < this.thresholdIdx) {
+                    this.thresholdIdx = currentTier;
+                    
+                    if (GAME.stage === 1) { 
+                        // 移除所有眩晕逻辑，仅保留爆甲特效
+                        showCenterAlert("💥 暴击核心！BOSS受到重创大幅击退！"); 
+                        this.mesh.position.z = Math.max(-60, this.mesh.position.z - 8.0);
+                        spawnImpactSparks(this.mesh.position, 0xffd700, 25);
+                    }
+                    else if (GAME.stage === 4) { showCenterAlert("💥 暴击破甲！战车坦克装甲破裂！"); spawnImpactSparks(this.mesh.position, 0xffa500, 30); }
+                    else if (GAME.stage === 3) { }
+                    else { this.mesh.position.z = Math.max(-60, this.mesh.position.z - 12); showCenterAlert("💥 暴击核心！BOSS受到重创硬直击退！"); spawnImpactSparks(this.mesh.position, 0xffd700, 25); }
+                }
+
+                if (GAME.stage === 3 && pct <= 0.25 && !this.isBerserk) {
+                    this.isBerserk = true;
+                    this.hp = this.maxHp;
+                    this.speed = 3.8;
+                    this.mesh.scale.set(3.2, 3.2, 3.2); 
+                    showCenterAlert("⚠️ 暴君被彻底激怒！免疫击退、移动暴增且血量回满！");
+                    audio.playZombieClaw();
+                }
+            }
+
+            if (this.hp <= 0) {
+                this.isAlive = false; GAME.kills++; GAME.stageKills++; dom.killCount.innerText = String(GAME.kills).padStart(3, '0');
+                if (this.soldierLaserMesh) scene.remove(this.soldierLaserMesh);
+                if (this.isBoss) { dom.bossHud.classList.add('hidden'); GAME.boss = null; triggerStageClear(); }
+            }
+        }
+        destroy() {
+            if (this.soldierLaserMesh) {
+                safeRemoveObject3D(this.soldierLaserMesh, true);
+                this.soldierLaserMesh = null;
+            }
+            safeRemoveObject3D(this.mesh, true);
+            const idx = enemies.indexOf(this); if (idx > -1) enemies.splice(idx, 1);
+        }
+    }
+
+    class ProjectileOrb {
+        constructor(startPos, kind) {
+            this.mesh = new THREE.Group(); this.mesh.position.copy(startPos); this.mesh.userData = { projectile: this }; scene.add(this.mesh);
+            this.kind = kind; this.speed = 11.5;
+            let colorHex = 0x22c55e; let radius = 0.3;
+            if (kind === 'fire') { colorHex = 0xf97316; radius = 0.32; } 
+            else if (kind === 'acid') { colorHex = 0x84cc16; radius = 0.35; } 
+            else if (kind === 'laser') { colorHex = 0x06b6d4; radius = 0.25; audio.playLaser(); } 
+            else if (kind === 'tank_shell') { colorHex = 0xeab308; radius = 0.65; this.speed = 10.0; } 
+            else if (kind === 'gatling' || kind === 'bullet') { colorHex = 0xfacc15; radius = 0.18; this.speed = 16.0; }
+            else if (kind === 'grenade') { colorHex = 0x444444; radius = 0.22; this.speed = 8.0; }
+
+            const sphere = new THREE.Mesh(new THREE.SphereGeometry(radius, 8, 8), new THREE.MeshStandardMaterial({ color: colorHex, emissive: colorHex, emissiveIntensity: 0.8 })); sphere.userData = { projectile: this }; this.mesh.add(sphere);
+            const helper = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.7, 6, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 })); helper.userData = { projectile: this }; this.mesh.add(helper);
+
+            this.target = new THREE.Vector3(0, 0.9, -1.2);
+            const dirVec = this.target.clone().sub(startPos);
+            if (dirVec.lengthSq() > 0.0001) this.dir = dirVec.normalize();
+            else this.dir = new THREE.Vector3(0, 0, 1);
+            this.isAlive = true; enemyProjectiles.push(this);
+        }
+        update(delta) {
+            if (!this.isAlive) return;
+            this.mesh.position.add(this.dir.clone().multiplyScalar(this.speed * delta));
+            if (this.mesh.position.z >= -1.2) this.impact();
+        }
+        impact() {
+            this.isAlive = false;
+            if (this.kind === 'grenade') {
+                applyPlayerDamage(Math.round(25 * GAME.difficultyScale));
+                spawnImpactSparks(this.mesh.position, 0xff5500, 25);
+                GAME.cameraShake = 0.8;
+                audio.playBombExplosion();
+                this.destroy();
+                return;
+            }
+
+            if (GAME.poseFactor < 0.35) { audio.playCoverDeflect(); spawnImpactSparks(this.mesh.position, 0x38bdf8, 12); }
+            else {
+                let dmg = 8; if (this.kind === 'fire') dmg = 7; if (this.kind === 'acid') dmg = 8; if (this.kind === 'tank_shell') dmg = 45; if (this.kind === 'laser') dmg = 15;
+                dmg = Math.round(dmg * GAME.difficultyScale); 
+                applyPlayerDamage(dmg); spawnImpactSparks(this.mesh.position, 0xef4444, 18);
+            }
+            this.destroy();
+        }
+        shootDown(hitPoint) {
+            this.isAlive = false; audio.playZombieHit(); createFloatingDamageText("INTERCEPTED!", true, hitPoint); spawnImpactSparks(hitPoint, 0x38bdf8, 16); this.destroy();
+        }
+        destroy() { safeRemoveObject3D(this.mesh, true); const idx = enemyProjectiles.indexOf(this); if (idx > -1) enemyProjectiles.splice(idx, 1); }
+    }
+
+    function triggerIonBeam(pos) {
+        showCenterAlert("⚠️ 飞碟释放超级离子巨炮！极高穿透伤害！"); audio.playLaser();
+        const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 80, 16), new THREE.MeshBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.85 }));
+        beam.rotation.x = Math.PI / 2; beam.position.set(0, 2, -35); scene.add(beam);
+        GAME.cameraShake = 1.0;
+        setTimeout(() => { safeRemoveObject3D(beam, true); const ionDmg = (GAME.poseFactor < 0.35) ? 25 : 55; applyPlayerDamage(Math.round(ionDmg * GAME.difficultyScale)); }, 600);
+    }
+
+    class SupplyDrone {
+        constructor() {
+            this.mesh = new THREE.Group(); const startX = (Math.random() > 0.5 ? -22 : 22); this.speedX = (startX < 0 ? 1.8 : -1.8);
+            this.mesh.position.set(startX, 7.5 + Math.random() * 2, -22 - Math.random() * 10); this.mesh.userData = { drone: this }; scene.add(this.mesh);
+            const box = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.2, 1.6), new THREE.MeshStandardMaterial({ color: 0xd32f2f, roughness: 0.5, metalness: 0.2 })); box.userData = { drone: this }; this.mesh.add(box);
+            const lid = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.28, 1.7), new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.5, metalness: 0.3 })); lid.position.y = 0.65; lid.userData = { drone: this }; this.mesh.add(lid);
+            const chute = new THREE.Mesh(new THREE.ConeGeometry(2.0, 1.4, 12, 1, true), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 })); chute.position.set(0, 1.8, 0); chute.userData = { drone: this }; this.mesh.add(chute);
+            const hitSphere = new THREE.Mesh(new THREE.SphereGeometry(2.5, 8, 8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 })); hitSphere.userData = { drone: this }; this.mesh.add(hitSphere);
+            this.isAlive = true; let dropTypes = ['MAG_EXPAND', 'ARMOR', 'MEDKIT', 'POTION', 'TURRET']; if (GAME.stage > 1) dropTypes.push('AMMO_PACK');
+            this.rewardType = dropTypes[Math.floor(Math.random() * dropTypes.length)]; supplyDrones.push(this);
+        }
+        update(delta) { if (!this.isAlive) return; this.mesh.position.x += this.speedX * delta; this.mesh.position.y -= delta * 0.2; if (Math.abs(this.mesh.position.x) > 30 || this.mesh.position.y < 1) this.destroy(); }
+        shootDown(hitPoint) {
+            this.isAlive = false; audio.playSupplyPickup(); spawnImpactSparks(hitPoint, 0x38bdf8, 25);
+            let ammoBonusText = [];
+            if (GAME.weapons.shotgun.unlocked) { GAME.weapons.shotgun.reserve += 10; ammoBonusText.push("霰弹+10"); }
+            if (GAME.weapons.rifle.unlocked) { GAME.weapons.rifle.reserve += 60; ammoBonusText.push("步枪+60"); }
+            if (GAME.weapons.rpg.unlocked) { GAME.weapons.rpg.reserve += 1; ammoBonusText.push("RPG+1"); }
+            let mainRewardText = "";
+            if (this.rewardType === 'MAG_EXPAND') { GAME.weapons.vector.magSize += 6; GAME.weapons.shotgun.magSize += 2; GAME.weapons.rifle.magSize += 10; mainRewardText = "📦 弹夹扩容！"; }
+            else if (this.rewardType === 'ARMOR') { GAME.armor = 100; updateArmorUI(); mainRewardText = "🛡️ 护甲补满(+100)！"; }
+            else if (this.rewardType === 'AMMO_PACK') { if (GAME.weapons.rifle.unlocked) GAME.weapons.rifle.reserve += 120; if (GAME.weapons.shotgun.unlocked) GAME.weapons.shotgun.reserve += 20; if (GAME.weapons.rpg.unlocked) GAME.weapons.rpg.reserve += 2; mainRewardText = "🎯 重型军火包！"; }
+            else if (this.rewardType === 'MEDKIT') { GAME.items.medkit++; updateInventoryUI(); mainRewardText = "🩹 急救箱+1！"; }
+            else if (this.rewardType === 'POTION') { GAME.items.potion++; updateInventoryUI(); mainRewardText = "🧪 无敌药水+1！"; }
+            else if (this.rewardType === 'TURRET') { GAME.items.turret++; updateInventoryUI(); mainRewardText = "🤖 自动炮台+1！"; }
+            updateAmmoUI(); const fullMsg = ammoBonusText.length > 0 ? `${mainRewardText} 附赠备弹(${ammoBonusText.join('、')})！` : mainRewardText; showToast(fullMsg);
+            this.destroy();
+        }
+        destroy() { safeRemoveObject3D(this.mesh, true); const idx = supplyDrones.indexOf(this); if (idx > -1) supplyDrones.splice(idx, 1); }
+    }
+
+    function deployAutoTurret() {
+        if (GAME.items.turret <= 0) return; GAME.items.turret--; updateInventoryUI();
+        GAME.turretActive = true; GAME.turretTimer = 30; turretGroup.visible = true; dom.turretStatusBadge.classList.remove('hidden');
+        audio.playTurretShot(); showToast("🤖 重型自动哨戒机炮部署完毕！火力支援30秒！");
+    }
+
+    function updateAutoTurret(delta) {
+        if (!GAME.turretActive) return;
+        GAME.turretTimer -= delta; dom.turretTimerText.innerText = `${Math.ceil(GAME.turretTimer)}s`;
+        let target = null; let minDist = 999;
+        enemies.forEach(e => { if (e.isAlive) { const dist = Math.abs(e.mesh.position.x); if (dist < minDist) { minDist = dist; target = e; } } });
+        if (turretHead) {
+            if (target) { const angle = Math.atan2(target.mesh.position.x - turretGroup.position.x, target.mesh.position.z - turretGroup.position.z); turretHead.rotation.y = THREE.MathUtils.lerp(turretHead.rotation.y, angle + Math.PI, delta * 8); }
+            else { turretHead.rotation.y = Math.sin(clock.getElapsedTime() * 2.5) * 0.35; }
+        }
+        const now = clock.getElapsedTime();
+        if (now - GAME.lastTurretFireTime > 0.18) {
+            GAME.lastTurretFireTime = now;
+            if (target) {
+                if (turretBarrelCluster) turretBarrelCluster.rotation.z += 1.8; audio.playTurretShot(); target.takeDamage(22, false, target.mesh.position);
+                createTracerBeam(turretGroup.position.clone().add(new THREE.Vector3(0, 0.72, -0.6)), target.mesh.position); spawnImpactSparks(turretGroup.position.clone().add(new THREE.Vector3(0, 0.72, -0.6)), 0xffaa00, 4);
+            }
+        }
+        if (GAME.turretTimer <= 0) { GAME.turretActive = false; turretGroup.visible = false; dom.turretStatusBadge.classList.add('hidden'); showToast("🤖 哨戒机炮电力耗尽，自动缩回！"); }
+    }
+
+    function triggerFighterJetAirstrike() {
+        if (GAME.airstrikeCooldown > 0 || GAME.isAirstrikeActive) return;
+        GAME.airstrikeCooldown = 45; 
+        GAME.isAirstrikeActive = true; audio.playBombExplosion(); showCenterAlert("✈️ 呼叫重型战略轰炸！地毯式清场！");
+        const jetMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.9, roughness: 0.2 }); jetMesh = new THREE.Group();
+        const jetBody = new THREE.Mesh(new THREE.ConeGeometry(0.8, 6.0, 8), jetMat); jetBody.rotation.x = -Math.PI / 2; const wings = new THREE.Mesh(new THREE.BoxGeometry(6.5, 0.1, 2.2), jetMat); jetMesh.add(jetBody, wings);
+        jetMesh.position.set(0, 16, -110); scene.add(jetMesh);
+        [-50, -40, -30, -20, -12].forEach((zVal, idx) => { setTimeout(() => { const xVal = (Math.random() - 0.5) * 16; spawnExplosion(new THREE.Vector3(xVal, 0.5, zVal)); audio.playBombExplosion(); GAME.cameraShake = 1.0; }, 300 + idx * 150); });
+        setTimeout(() => { enemies.forEach(z => { if (z.isAlive) { if (z.isBoss) z.takeDamage(550, false, z.mesh.position); else z.takeDamage(999, false, z.mesh.position); } }); enemyProjectiles.forEach(p => p.destroy()); }, 600);
+        setTimeout(() => { if (jetMesh) { safeRemoveObject3D(jetMesh, true); jetMesh = null; } GAME.isAirstrikeActive = false; }, 1800);
+    }
+
+    function spawnExplosion(pos) {
+        const fireball = new THREE.Mesh(new THREE.SphereGeometry(2.0, 14, 14), new THREE.MeshBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.9 })); fireball.position.copy(pos); scene.add(fireball);
+        explosions.push({ fireball: fireball, scale: 1.0, alpha: 1.0 }); spawnImpactSparks(pos, 0xffcc00, 30);
+    }
+
+    function getGameViewportRect() {
+        return dom.canvasBox.getBoundingClientRect();
+    }
+
+    function getAimPixel() {
+        const rect = getGameViewportRect();
+        const x = Math.max(0, Math.min(rect.width, GAME.crosshairPos.x));
+        const y = Math.max(0, Math.min(rect.height, GAME.crosshairPos.y));
+        return { x, y, width: rect.width, height: rect.height, rect };
+    }
+
+    function resetCrosshairToCenter() {
+        const rect = getGameViewportRect();
+        GAME.crosshairPos.x = rect.width * 0.5;
+        GAME.crosshairPos.y = rect.height * 0.5;
+        updateCrosshairUI();
+    }
+
+    function updateCrosshairUI() {
+        const rect = getGameViewportRect();
+        const maxX = Math.max(30, rect.width - 30);
+        const maxY = Math.max(40, rect.height - 120);
+        GAME.crosshairPos.x = Math.max(30, Math.min(maxX, GAME.crosshairPos.x));
+        GAME.crosshairPos.y = Math.max(40, Math.min(maxY, GAME.crosshairPos.y));
+        dom.crosshair.style.left = `${GAME.crosshairPos.x}px`;
+        dom.crosshair.style.top = `${GAME.crosshairPos.y}px`;
+    }
+
+    function getAimNDC(aimX = null, aimY = null) {
+        const rect = getGameViewportRect();
+        const x = aimX === null ? GAME.crosshairPos.x : aimX;
+        const y = aimY === null ? GAME.crosshairPos.y : aimY;
+        return new THREE.Vector2(
+            (x / rect.width) * 2 - 1,
+            -(y / rect.height) * 2 + 1
+        );
+    }
+
+    function handleWeaponFire() {
+        const wep = GAME.weapons[GAME.activeWeapon];
+        if (wep.curAmmo <= 0) { audio.playReloadStep('bolt'); showCenterAlert("弹夹打空！松手回掩体速装"); return; }
+        if (GAME.activeWeapon === 'rpg') { if (GAME.rpgAimHoldTime < 1.0) return; }
+        const now = clock.getElapsedTime(); if (now - GAME.lastFireTime < wep.fireRate) return;
+        GAME.lastFireTime = now; wep.curAmmo--; if (GAME.activeWeapon === 'rpg') GAME.rpgAimHoldTime = 0; updateAmmoUI();
+
+        // 先锁定本次射击的准心位置，再应用后坐力。
+        // 这样“看到的准心位置”与“实际射线起点方向”不会因为后坐力更新顺序而错位。
+        const shotAimX = GAME.crosshairPos.x;
+        const shotAimY = GAME.crosshairPos.y;
+
+        muzzlePointLight.intensity = 5.0; setTimeout(() => { muzzlePointLight.intensity = 0; }, 40);
+        GAME.cameraShake = (GAME.activeWeapon === 'rpg' ? 0.8 : GAME.activeWeapon === 'shotgun' ? 0.35 : 0.12);
+
+        const tipObj = bearTorso.getObjectByName('muzzleTip'); const muzzlePos = new THREE.Vector3(); tipObj.getWorldPosition(muzzlePos); muzzlePointLight.position.copy(muzzlePos);
+        const damageWithPerk = Math.round(wep.baseDmg * GAME.damageMultiplier);
+
+        if (GAME.activeWeapon === 'vector') { audio.playVector(); fireRaycastBullet(muzzlePos, damageWithPerk, wep.spread, wep.range, shotAimX, shotAimY); }
+        else if (GAME.activeWeapon === 'shotgun') { audio.playShotgun(); for (let i = 0; i < wep.pellets; i++) fireRaycastBullet(muzzlePos, damageWithPerk, wep.spread, wep.range, shotAimX, shotAimY); }
+        else if (GAME.activeWeapon === 'rifle') { audio.playRifle(); fireRaycastBullet(muzzlePos, damageWithPerk, wep.spread, wep.range, shotAimX, shotAimY); }
+        else if (GAME.activeWeapon === 'rpg') { audio.playRPGLaunch(); fireRPGRocket(muzzlePos, damageWithPerk, shotAimX, shotAimY); }
+
+        // 射线已经根据开火瞬间的准心计算完毕，现在才显示武器后坐力。
+        const viewRect = getGameViewportRect();
+        GAME.crosshairPos.y = Math.max(40, shotAimY - wep.recoilUp);
+        GAME.crosshairPos.x = Math.max(30, Math.min(viewRect.width - 30, shotAimX + (Math.random() - 0.5) * wep.recoilSide));
+        updateCrosshairUI();
+    }
+
+    function fireRPGRocket(origin, baseDmg, aimX = null, aimY = null) {
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(getAimNDC(aimX, aimY), camera);
+        let targetPoint = raycaster.ray.origin.clone().add(raycaster.ray.direction.clone().multiplyScalar(40));
+        const hitCandidates = []; enemies.forEach(e => { if (e.isAlive) hitCandidates.push(e.mesh); });
+        const intersects = raycaster.intersectObjects(hitCandidates, true); if (intersects.length > 0) targetPoint = intersects[0].point;
+
+        if (targetPoint.distanceTo(new THREE.Vector3(0, 0, 0)) < 4.5) { applyPlayerDamage(30); showCenterAlert("⚠️ RPG贴脸爆炸！战熊遭受自身破片波及！"); }
+        spawnExplosion(targetPoint); audio.playBombExplosion(); GAME.cameraShake = 1.2;
+
+        const aoeRadius = GAME.weapons.rpg.aoeRadius || 16.0;
+        enemies.forEach(e => {
+            if (e.isAlive) { const d = e.mesh.position.distanceTo(targetPoint); if (d < aoeRadius) { const falloff = 1 - (d / aoeRadius); e.takeDamage(Math.round(baseDmg * falloff), false, e.mesh.position); } }
+        });
+    }
+
+    function fireRaycastBullet(origin, baseDmg, spreadAmount, maxRange, aimX = null, aimY = null) {
+        const aimNDC = getAimNDC(aimX, aimY);
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(new THREE.Vector2(aimNDC.x + (Math.random() - 0.5) * spreadAmount, aimNDC.y + (Math.random() - 0.5) * spreadAmount), camera);
+
+        const hitCandidates = [];
+        enemies.forEach(z => { if (z.isAlive) hitCandidates.push(z.mesh); }); enemyProjectiles.forEach(b => { if (b.isAlive) hitCandidates.push(b.mesh); }); supplyDrones.forEach(c => { if (c.isAlive) hitCandidates.push(c.mesh); });
+        const intersects = raycaster.intersectObjects(hitCandidates, true);
+        let endPoint = raycaster.ray.origin.clone().add(raycaster.ray.direction.clone().multiplyScalar(maxRange));
+
+        if (intersects.length > 0) {
+            const hit = intersects[0]; endPoint = hit.point;
+            let entity = null, proj = null, drone = null, isWeakpoint = false; let curr = hit.object;
+            while (curr) {
+                if (curr.userData) {
+                    if (curr.userData.isWeakpoint) isWeakpoint = true;
+                    if (curr.userData.entity) { entity = curr.userData.entity; break; }
+                    if (curr.userData.projectile) { proj = curr.userData.projectile; break; }
+                    if (curr.userData.drone) { drone = curr.userData.drone; break; }
+                }
+                curr = curr.parent;
+            }
+            if (entity && entity.isAlive) { triggerHitmarker(isWeakpoint); entity.takeDamage(baseDmg, isWeakpoint, endPoint); }
+            else if (proj && proj.isAlive) proj.shootDown(endPoint);
+            else if (drone && drone.isAlive) drone.shootDown(endPoint);
+        } else { spawnImpactSparks(endPoint, 0xf59e0b, 3); }
+        createTracerBeam(origin, endPoint);
+    }
+
+    function createTracerBeam(start, end) {
+        const dir = end.clone().sub(start); const len = dir.length();
+        const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, len, 5), new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.9 }));
+        if (dir.lengthSq() > 0.001) mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+        mesh.position.copy(start.clone().add(dir.multiplyScalar(0.5))); scene.add(mesh); tracers.push({ mesh: mesh, alpha: 1.0 });
+    }
+
+    function spawnImpactSparks(pos, colorHex, count) {
+        const safeCount = Math.min(count, IS_MOBILE_DEVICE ? 12 : 18);
+        for (let i = 0; i < safeCount; i++) {
+            while (particles.length >= MAX_PARTICLES) {
+                const old = particles.shift();
+                if (old && old.mesh) safeRemoveObject3D(old.mesh, true);
+            }
+            const p = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.08), new THREE.MeshBasicMaterial({ color: colorHex })); p.position.copy(pos); scene.add(p);
+            particles.push({ mesh: p, vel: new THREE.Vector3((Math.random() - 0.5) * 7, Math.random() * 5 + 1, (Math.random() - 0.5) * 7), lifetime: 0.35 + Math.random() * 0.2 });
+        }
+    }
+
+    function spawnConfetti() {
+        audio.playSupplyPickup(); 
+        dom.celebrationBanner.classList.remove('hidden');
+        const confettiCount = IS_MOBILE_DEVICE ? 36 : 60;
+        for(let i=0; i<confettiCount; i++) {
+            const color = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff][Math.floor(Math.random()*6)];
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.12), new THREE.MeshBasicMaterial({color: color}));
+            mesh.position.set((Math.random()-0.5)*12, 5 + Math.random()*3, -6 - Math.random()*4);
+            scene.add(mesh);
+            particles.push({ mesh: mesh, vel: new THREE.Vector3((Math.random()-0.5)*10, Math.random()*8 + 4, (Math.random()-0.5)*6), lifetime: 4.0 });
+        }
+        setTimeout(() => { dom.celebrationBanner.classList.add('hidden'); }, 3000);
+    }
+
+    function createFloatingDamageText(text, isWeakpoint, worldPos) {
+        const screenPos = worldPos.clone().project(camera);
+        const frameW = dom.frame.clientWidth; const frameH = dom.frame.clientHeight;
+        const x = (screenPos.x * 0.5 + 0.5) * frameW; const y = (-(screenPos.y * 0.5) + 0.5) * frameH;
+        const el = document.createElement('div'); el.className = 'dmg-text'; el.style.left = `${x}px`; el.style.top = `${y}px`;
+        if (isWeakpoint) el.innerHTML = `<span style="color:#fde047; font-size:18px; font-weight:900; letter-spacing:1px;">⚡ CRIT 暴击! ${text}</span>`;
+        else el.innerHTML = `<span style="color:#ffffff; font-size:13px; font-weight:bold;">${text}</span>`;
+        // 移动端连续扫射时伤害数字很容易堆积成大量 DOM 节点，主动限制数量。
+        const oldDamages = dom.frame.querySelectorAll('.dmg-text');
+        if (oldDamages.length >= MAX_DAMAGE_DOM) oldDamages[0].remove();
+        dom.frame.appendChild(el); setTimeout(() => { if (el.parentNode) el.remove(); }, 750);
+    }
+
+    function triggerHitmarker(isWeakpoint) {
+        dom.hitmarker.style.opacity = '1'; const lines = dom.hitmarker.querySelectorAll('div');
+        lines.forEach(l => l.style.backgroundColor = isWeakpoint ? '#facc15' : '#38bdf8'); setTimeout(() => { dom.hitmarker.style.opacity = '0'; }, 100);
+    }
+
+    function handleCoverReload(delta) {
+        const wep = GAME.weapons[GAME.activeWeapon];
+        if (!GAME.isHoldingTouch && wep.curAmmo < wep.magSize && wep.reserve > 0) {
+            if (!GAME.isReloading) { GAME.isReloading = true; GAME.reloadTimer = 0; audio.playReloadStep('out'); dom.chReload.classList.remove('hidden'); }
+            GAME.reloadTimer += delta; const progress = Math.min(1.0, GAME.reloadTimer / wep.reloadTime);
+            dom.chReloadRing.style.strokeDashoffset = 75.4 * (1.0 - progress); dom.chReloadPct.innerText = `${Math.round(progress * 100)}%`;
+            if (GAME.reloadTimer >= 0.45 && GAME.reloadTimer - delta < 0.45) audio.playReloadStep('in');
+            if (GAME.reloadTimer >= wep.reloadTime) {
+                const needed = wep.magSize - wep.curAmmo; const canLoad = Math.min(needed, wep.reserve);
+                wep.curAmmo += canLoad; if (wep.reserve !== Infinity) wep.reserve -= canLoad;
+                GAME.isReloading = false; dom.chReload.classList.add('hidden'); updateAmmoUI(); hideCenterAlert();
+            }
+        } else if (GAME.isHoldingTouch) { GAME.isReloading = false; dom.chReload.classList.add('hidden'); }
+    }
+
+    function switchWeapon(wepKey) {
+        if (!GAME.weapons[wepKey].unlocked) { showToast("⚠️ 该武器尚未在当前关卡解锁！"); return; }
+        GAME.activeWeapon = wepKey; Object.keys(wepMeshes).forEach(k => { wepMeshes[k].visible = (k === wepKey); });
+        ['slotVector', 'slotShotgun', 'slotRifle', 'slotRpg'].forEach(s => { dom[s].style.borderColor = '#404040'; dom[s].style.background = 'rgba(23, 23, 23, 0.9)'; });
+        const activeSlot = (wepKey === 'vector' ? dom.slotVector : wepKey === 'shotgun' ? dom.slotShotgun : wepKey === 'rifle' ? dom.slotRifle : dom.slotRpg);
+        activeSlot.style.borderColor = '#38bdf8'; activeSlot.style.background = 'rgba(8, 47, 73, 0.6)';
+        dom.shotgunRing.classList.toggle('hidden', wepKey !== 'shotgun'); dom.rpgLockInd.classList.toggle('hidden', wepKey !== 'rpg');
+        updateAmmoUI(); audio.playReloadStep('in');
+    }
+
+    function updateAmmoUI() {
+        const wV = GAME.weapons.vector; const wS = GAME.weapons.shotgun; const wR = GAME.weapons.rifle; const wG = GAME.weapons.rpg;
+        dom.ammoVector.innerText = `${wV.curAmmo}/∞`; dom.ammoShotgun.innerText = wS.unlocked ? `${wS.curAmmo}/${wS.reserve}` : '未解锁';
+        dom.ammoRifle.innerText = wR.unlocked ? `${wR.curAmmo}/${wR.reserve}` : '未解锁'; dom.ammoRpg.innerText = wG.unlocked ? `${wG.curAmmo}/${wG.reserve}` : '未解锁';
+        [{ el: dom.slotShotgun, w: wS }, { el: dom.slotRifle, w: wR }, { el: dom.slotRpg, w: wG }].forEach(item => { if (item.w.unlocked) item.el.style.opacity = '1'; });
+    }
+
+    function updateInventoryUI() { dom.itemMedkitQty.innerText = GAME.items.medkit; dom.itemPotionQty.innerText = GAME.items.potion; dom.itemTurretQty.innerText = GAME.items.turret; }
+    function updateHpUI() { const pct = Math.max(0, (GAME.hp / GAME.maxHp) * 100); dom.hpBar.style.width = `${pct}%`; dom.hpText.innerText = Math.round(GAME.hp); }
+    function updateArmorUI() { const pct = Math.max(0, (GAME.armor / GAME.maxArmor) * 100); dom.armorBar.style.width = `${pct}%`; dom.armorText.innerText = Math.round(GAME.armor); }
+
+    function applyPlayerDamage(amount) {
+        if (GAME.invincibleTimer > 0) return;
+        GAME.stageDamageTaken += amount;
+        if (GAME.armor > 0) { if (GAME.armor >= amount) { GAME.armor -= amount; amount = 0; } else { amount -= GAME.armor; GAME.armor = 0; } updateArmorUI(); }
+        if (amount > 0) { GAME.hp = Math.max(0, GAME.hp - amount); updateHpUI(); }
+        dom.damageOverlay.style.opacity = '1'; setTimeout(() => { dom.damageOverlay.style.opacity = '0'; }, 180); GAME.cameraShake = 0.5;
+        if (GAME.hp <= 0) triggerGameOver("防线失守", "掩体被攻破，狂暴战熊力竭倒下...");
+    }
+
+    function showCenterAlert(text) { dom.centerAlertText.innerText = text; dom.centerAlert.style.opacity = '1'; dom.centerAlert.style.transform = 'translate(-50%, -50%) scale(1)'; }
+    function hideCenterAlert() { dom.centerAlert.style.opacity = '0'; dom.centerAlert.style.transform = 'translate(-50%, -50%) scale(0.95)'; }
+
+    function triggerWaveBanner(mainText, subText) {
+        dom.waveAlertMain.innerText = mainText; dom.waveAlertSub.innerText = subText;
+        dom.waveAlert.style.opacity = '1'; dom.waveAlert.style.transform = 'scale(1)';
+        setTimeout(() => { dom.waveAlert.style.opacity = '0'; dom.waveAlert.style.transform = 'scale(0.9)'; }, 2200);
+    }
+
+    function resetStageForCurrent() {
+        if (GAME.stage < 1 || GAME.stage > GAME.maxStage) GAME.stage = 1;
+        const stageIdx = GAME.stage - 1;
+        applyStageTheme(stageIdx);
+        GAME.stageKills = 0; GAME.stageCrits = 0; GAME.stageDamageTaken = 0;
+        GAME.stageTimer = 120; GAME.currentWaveIndex = 0; GAME.waveSpawnQueue = 0; GAME.earlyAdvanceCountdown = -1; GAME.boss = null;
+        GAME.isHoldingTouch = false; GAME.rpgAimHoldTime = 0; GAME.isReloading = false; GAME.reloadTimer = 0;
+        if (GAME.stage >= 2) GAME.weapons.shotgun.unlocked = true; if (GAME.stage >= 3) GAME.weapons.rifle.unlocked = true; if (GAME.stage >= 4) GAME.weapons.rpg.unlocked = true;
+        if (GAME.stage >= 5) { dom.slotAirstrike.style.opacity = '1'; dom.airstrikeTimerBadge.innerText = '就绪'; }
+        dom.bossHud.classList.add('hidden'); dom.bossShieldBox.classList.add('hidden'); dom.chReload.classList.add('hidden');
+        enemies.slice().forEach(z => z.destroy()); enemies = [];
+        enemyProjectiles.slice().forEach(b => b.destroy()); enemyProjectiles = [];
+        supplyDrones.slice().forEach(c => c.destroy()); supplyDrones = [];
+        tracers.slice().forEach(t => safeRemoveObject3D(t.mesh, true)); tracers = [];
+        particles.slice().forEach(p => safeRemoveObject3D(p.mesh, true)); particles = [];
+        explosions.slice().forEach(ex => safeRemoveObject3D(ex.fireball, true)); explosions = [];
+        updateAmmoUI(); GAME.nextSupplyTime = 20; triggerNextWave(1);
+    }
+
+    function triggerNextWave(waveNum) {
+        GAME.currentWaveIndex = waveNum; GAME.earlyAdvanceCountdown = -1;
+        if (waveNum <= 4) dom.waveBadge.innerText = `WAVE ${waveNum}/4`; else dom.waveBadge.innerText = `BOSS 决战`;
+        const countPerWave = 14 + (GAME.stage * 3) + (waveNum * 2) + (GAME.loopCount * 5); 
+        if (waveNum === 1) { triggerWaveBanner("第 1 波先头部队突袭！", "WARNING: WAVE 1/4"); GAME.waveSpawnQueue = countPerWave; }
+        else if (waveNum === 2) { triggerWaveBanner("第 2 波高危敌群突围！", "WARNING: WAVE 2/4"); GAME.waveSpawnQueue = countPerWave; }
+        else if (waveNum === 3) { triggerWaveBanner("第 3 波狂暴攻势汹涌！", "WARNING: WAVE 3/4"); GAME.waveSpawnQueue = countPerWave; }
+        else if (waveNum === 4) { triggerWaveBanner("第 4 波终极防线决战！", "WARNING: FINAL WAVE 4/4"); GAME.waveSpawnQueue = countPerWave; }
+        else if (waveNum === 5) { triggerBossSpawn(); }
+    }
+
+    function triggerBossSpawn() {
+        const cfg = STAGE_CONFIGS[Math.max(0, Math.min(STAGE_CONFIGS.length - 1, GAME.stage - 1))]; if (!cfg) return; triggerWaveBanner(`⚠️ ${cfg.bossName} 降临！`, "CRITICAL: BOSS INCOMING"); dom.bossHud.classList.remove('hidden');
+        GAME.boss = new EnemyEntity({ pos: new THREE.Vector3(0, 0, -42), hp: cfg.bossHp, isBoss: true });
+        dom.bossHpBar.style.width = '100%'; dom.bossHpPct.innerText = '100%'; dom.bossName.innerText = cfg.bossName;
+    }
+
+    function triggerStageClear() {
+        if (GAME.stageTransitionLock) return;
+        GAME.stageTransitionLock = true;
+
+        let grade = 'B'; let comment = '坚守勇士'; let boxColor = '#d97706'; let hpRatio = GAME.hp / GAME.maxHp;
+        if (hpRatio >= 0.75 && GAME.stageCrits >= 5) { grade = 'S'; comment = '末日猎神'; boxColor = '#eab308'; }
+        else if (hpRatio >= 0.50) { grade = 'A'; comment = '特战精英'; boxColor = '#06b6d4'; }
+        else if (hpRatio >= 0.25) { grade = 'B'; comment = '坚守勇士'; boxColor = '#d97706'; }
+        else { grade = 'C'; comment = '浴血幸存'; boxColor = '#64748b'; }
+
+        dom.gradeBadgeText.innerText = grade; dom.gradeBadgeBox.style.background = `radial-gradient(circle, ${boxColor} 0%, #000 100%)`; dom.gradeBadgeBox.style.borderColor = boxColor;
+        dom.statKills.innerText = GAME.stageKills; dom.statCrits.innerText = GAME.stageCrits; dom.statDamage.innerText = Math.round(GAME.stageDamageTaken); dom.statComment.innerText = comment; dom.statComment.style.color = boxColor;
+
+        GAME.hp = GAME.maxHp; updateHpUI();
+        GAME.weapons.shotgun.reserve = 25; GAME.weapons.rifle.reserve = 120; GAME.weapons.rpg.reserve = 3;
+        GAME.weapons.vector.curAmmo = GAME.weapons.vector.magSize; GAME.weapons.shotgun.curAmmo = GAME.weapons.shotgun.magSize; GAME.weapons.rifle.curAmmo = GAME.weapons.rifle.magSize; GAME.weapons.rpg.curAmmo = GAME.weapons.rpg.magSize;
+        updateAmmoUI();
+
+        GAME.state = 'UPGRADE';
+        spawnConfetti();
+        setTimeout(() => {
+            // 故事模式第五关：不进入排行榜结算，直接展示结局。
+            if (GAME.mode === 'STORY' && GAME.stage >= GAME.maxStage) {
+                showStoryEnding();
+                GAME.stageTransitionLock = false;
+                return;
+            }
+            renderPerkSelection();
+            dom.upgradeModal.classList.remove('hidden');
+            GAME.stageTransitionLock = false;
+        }, 1800);
+    }
+
+    function renderPerkSelection() {
+        const pool = [
+            { title: "狂暴体能强化", desc: "最大生命值增加 50 点", apply: () => { GAME.maxHp += 50; GAME.hp = GAME.maxHp; updateHpUI(); } },
+            { title: "高爆军火改良", desc: "所有武器基础伤害永久提升 20%", apply: () => { GAME.damageMultiplier += 0.20; } },
+            { title: "战术纳米装甲", desc: "补满100点护甲，获取急救箱x2", apply: () => { GAME.armor = 100; GAME.items.medkit += 2; updateArmorUI(); updateInventoryUI(); } },
+            { title: "神经反应特训", desc: "所有武器射速与换弹速度提升 15%", apply: () => { Object.values(GAME.weapons).forEach(w => { if(w.fireRate) { w.fireRate *= 0.85; w.reloadTime *= 0.85; } }); } },
+            { title: "重装后勤支援", desc: "备弹大补给，获取自动机炮x2", apply: () => { GAME.weapons.shotgun.reserve += 40; GAME.weapons.rifle.reserve += 150; GAME.weapons.rpg.reserve += 4; GAME.items.turret += 2; updateAmmoUI(); updateInventoryUI(); } }
+        ];
+        pool.sort(() => 0.5 - Math.random());
+        const choices = pool.slice(0, 3);
+        dom.endlessDecisionBox.classList.toggle('hidden', !(GAME.mode === 'ENDLESS' && GAME.stage >= GAME.maxStage));
+        dom.perkContainer.innerHTML = '';
+
+        let perkSelected = false;
+        choices.forEach((perk) => {
+            const btn = document.createElement('button');
+            btn.className = "action-btn"; btn.style.width = "100%"; btn.style.padding = "10px"; btn.style.flexDirection = "column"; btn.style.alignItems = "flex-start";
+            btn.innerHTML = `<div style="font-size:12px; font-weight:900; color:#f59e0b; margin-bottom:2px;">${perk.title}</div><div style="font-size:10px; color:#a3a3a3; line-height:1.3;">${perk.desc}</div>`;
+            btn.onclick = () => {
+                if (perkSelected) return;
+                perkSelected = true;
+                perk.apply();
+                [...dom.perkContainer.querySelectorAll('button')].forEach(b => { b.disabled = true; b.style.opacity = b === btn ? '0.65' : '0.35'; });
+                if (GAME.mode === 'ENDLESS' && GAME.stage >= GAME.maxStage) {
+                    showToast('强化已装备，请选择是否继续挑战');
+                    return;
+                }
+                advanceAfterPerk();
+            };
+            dom.perkContainer.appendChild(btn);
+        });
+    }
+
+    function advanceAfterPerk() {
+        dom.upgradeModal.classList.add('hidden');
+        dom.endlessDecisionBox.classList.add('hidden');
+        GAME.stageTransitionLock = false;
+
+        if (GAME.mode === 'ENDLESS' && GAME.stage >= GAME.maxStage) {
+            GAME.stage = 1;
+            GAME.loopCount++;
+            GAME.difficultyScale += 0.4;
+            showToast(`🧬 轮回重启！进入第 ${GAME.loopCount + 1} 纪元，怪物已大幅狂暴化！`);
+            resetStageForCurrent();
+            GAME.state = 'PLAYING';
+            return;
+        }
+
+        GAME.stage++;
+        if (GAME.mode === 'STORY') {
+            showStoryIntro(GAME.stage);
+        } else {
+            resetStageForCurrent();
+            GAME.state = 'PLAYING';
+        }
+    }
+
+    function showEndlessRetreat() {
+        dom.upgradeModal.classList.add('hidden');
+        dom.endlessDecisionBox.classList.add('hidden');
+        GAME.stageTransitionLock = false;
+        triggerGameOver("无尽征程结算", `你成功完成第 ${GAME.loopCount + 1} 轮五关战场！\n狂暴战熊已斩杀 ${GAME.kills} 只怪物，功成身退！`);
+    }
+
+    function showStoryIntro(stageNum) {
+        const data = STORY_INTROS[Math.max(0, Math.min(STORY_INTROS.length - 1, stageNum - 1))];
+        if (!data) return;
+        GAME.stage = stageNum;
+        GAME.state = 'STORY_INTRO';
+        GAME.isHoldingTouch = false;
+        dom.storyIntroTitle.innerText = data.title;
+        dom.storyIntroText.innerText = data.text;
+        dom.storyIntroModal.classList.remove('hidden');
+    }
+
+    function startStoryStage() {
+        dom.storyIntroModal.classList.add('hidden');
+        GAME.state = 'PLAYING';
+        resetStageForCurrent();
+        GAME.state = 'PLAYING';
+    }
+
+    function showStoryEnding() {
+        GAME.state = 'STORY_ENDING';
+        GAME.isHoldingTouch = false;
+        dom.upgradeModal.classList.add('hidden');
+        dom.storyIntroModal.classList.add('hidden');
+        dom.gameOverModal.classList.add('hidden');
+        dom.storyEndingModal.classList.remove('hidden');
+        // 故事模式结局绝不触发排行榜记录。
+        setTimeout(() => {
+            if (GAME.state === 'STORY_ENDING') returnToMainMenu();
+        }, 7000);
+    }
+
+    function returnToMainMenu() {
+        dom.storyEndingModal.classList.add('hidden');
+        dom.upgradeModal.classList.add('hidden');
+        dom.gameOverModal.classList.add('hidden');
+        dom.storyIntroModal.classList.add('hidden');
+        dom.endlessDecisionBox.classList.add('hidden');
+        GAME.isHoldingTouch = false;
+        GAME.isPaused = false;
+        GAME.stageTransitionLock = false;
+        GAME.state = 'MENU';
+        dom.mainMenuModal.classList.remove('hidden');
+    }
+
+    function triggerGameOver(title, desc) {
+        if (GAME.state === 'GAMEOVER' && !dom.gameOverModal.classList.contains('hidden')) return;
+        GAME.state = 'GAMEOVER';
+        GAME.stageTransitionLock = false;
+        dom.chReload.classList.add('hidden');
+        dom.gameoverTitle.innerText = title;
+        dom.gameoverDesc.innerText = desc;
+        dom.finalKills.innerText = GAME.kills;
+
+        const stageStr = GAME.mode === 'ENDLESS' ? `轮回${GAME.loopCount + 1}-关${GAME.stage}` : `第${GAME.stage}关`;
+        dom.finalStage.innerText = stageStr;
+
+        const isEndless = GAME.mode === 'ENDLESS';
+        const rankBox = dom.gameOverModal.querySelector('.rank-box');
+        const nameBox = dom.playerNameInput ? dom.playerNameInput.parentElement : null;
+        if (rankBox) rankBox.classList.toggle('hidden', !isEndless);
+        if (nameBox) nameBox.classList.toggle('hidden', !isEndless);
+        if (dom.btnLeaderboardGo) dom.btnLeaderboardGo.classList.toggle('hidden', !isEndless);
+
+        dom.gameOverModal.classList.remove('hidden');
+        // 只有无限模式允许产生排行榜记录；故事模式无论胜负都不会写入云端/本地排行榜。
+        if (isEndless) recordGameResult(GAME.kills, stageStr);
+    }
+
+    function setupControls() {
+        dom.btnToggleAudio.addEventListener('click', (e) => { e.stopPropagation(); audio.init(); audio.isMuted = !audio.isMuted; dom.btnToggleAudio.innerText = audio.isMuted ? '🔇' : '🔊'; dom.btnToggleAudio.style.color = audio.isMuted ? '#737373' : '#38bdf8'; });
+        dom.btnPauseGame.addEventListener('click', (e) => { e.stopPropagation(); if (GAME.state === 'PLAYING') { GAME.isPaused = true; dom.pauseModal.classList.remove('hidden'); } });
+        dom.btnResume.addEventListener('click', () => { GAME.isPaused = false; dom.pauseModal.classList.add('hidden'); });
+        dom.btnRestartPaused.addEventListener('click', () => { GAME.isPaused = false; dom.pauseModal.classList.add('hidden'); resetFullGame(); });
+
+        dom.btnStoryMode.addEventListener('click', () => { audio.init(); dom.mainMenuModal.classList.add('hidden'); GAME.mode = 'STORY'; GAME.loopCount = 0; GAME.difficultyScale = 1.0; resetFullGame(); });
+        dom.btnEndlessMode.addEventListener('click', () => { audio.init(); dom.mainMenuModal.classList.add('hidden'); GAME.mode = 'ENDLESS'; GAME.loopCount = 0; GAME.difficultyScale = 1.0; showToast("⚠️ 已开启无限肉鸽模式，生存到最后一刻吧！"); resetFullGame(); });
+        dom.btnStoryIntroStart.addEventListener('click', (e) => { e.stopPropagation(); startStoryStage(); });
+        dom.btnStoryEndingHome.addEventListener('click', (e) => { e.stopPropagation(); returnToMainMenu(); });
+        dom.btnEndlessContinue.addEventListener('click', (e) => { e.stopPropagation(); advanceAfterPerk(); });
+        dom.btnEndlessRetreat.addEventListener('click', (e) => { e.stopPropagation(); showEndlessRetreat(); });
+
+        dom.slotVector.addEventListener('click', (e) => { e.stopPropagation(); audio.init(); switchWeapon('vector'); });
+        dom.slotShotgun.addEventListener('click', (e) => { e.stopPropagation(); audio.init(); switchWeapon('shotgun'); });
+        dom.slotRifle.addEventListener('click', (e) => { e.stopPropagation(); audio.init(); switchWeapon('rifle'); });
+        dom.slotRpg.addEventListener('click', (e) => { e.stopPropagation(); audio.init(); switchWeapon('rpg'); });
+        dom.slotAirstrike.addEventListener('click', (e) => { e.stopPropagation(); audio.init(); if (GAME.stage >= 5) triggerFighterJetAirstrike(); else showToast("⚠️ 空袭战术支援将在第五关决战解锁！"); });
+
+        dom.btnItemMedkit.addEventListener('click', (e) => { e.stopPropagation(); if (GAME.items.medkit > 0) { GAME.items.medkit--; GAME.hp = Math.min(GAME.maxHp, GAME.hp + 50); updateHpUI(); updateInventoryUI(); audio.playSupplyPickup(); showToast("🩹 使用急救箱：恢复 50 点生命值！"); } else showToast("急救箱不足！"); });
+        dom.btnItemPotion.addEventListener('click', (e) => { e.stopPropagation(); if (GAME.items.potion > 0) { GAME.items.potion--; GAME.invincibleTimer = 10; dom.invincibleOverlay.style.opacity = '1'; updateInventoryUI(); audio.playSupplyPickup(); showToast("🧪 饮用无敌药水：开启 10 秒神圣无敌！"); } else showToast("无敌药水不足！"); });
+        dom.btnItemTurret.addEventListener('click', (e) => { e.stopPropagation(); if (GAME.items.turret > 0) deployAutoTurret(); else showToast("自动炮台不足！"); });
+
+        const onActionStart = (clientX, clientY) => {
+            if (GAME.state !== 'PLAYING' || GAME.isPaused) return; audio.init(); GAME.isHoldingTouch = true; GAME.touchLastPos.x = clientX; GAME.touchLastPos.y = clientY;
+            dom.stanceBadge.style.background = '#f59e0b'; dom.stanceBadge.style.boxShadow = '0 0 8px #f59e0b'; dom.stanceText.innerText = "探身架枪 (瞄准射击)"; dom.stanceText.style.color = '#f59e0b'; hideCenterAlert();
+        };
+        const onActionMove = (clientX, clientY) => {
+            if (!GAME.isHoldingTouch || GAME.state !== 'PLAYING' || GAME.isPaused) return;
+            const dx = clientX - GAME.touchLastPos.x; const dy = clientY - GAME.touchLastPos.y; GAME.touchLastPos.x = clientX; GAME.touchLastPos.y = clientY;
+            const viewRect = getGameViewportRect();
+            GAME.crosshairPos.x = Math.max(30, Math.min(viewRect.width - 30, GAME.crosshairPos.x + dx * 1.15));
+            GAME.crosshairPos.y = Math.max(40, Math.min(viewRect.height - 120, GAME.crosshairPos.y + dy * 1.15));
+            updateCrosshairUI();
+        };
+        const onActionEnd = () => {
+            if (GAME.state !== 'PLAYING' || GAME.isPaused) return; GAME.isHoldingTouch = false; GAME.rpgAimHoldTime = 0; resetCrosshairToCenter();
+            dom.stanceBadge.style.background = '#34d399'; dom.stanceBadge.style.boxShadow = '0 0 6px #34d399'; dom.stanceText.innerText = "掩体防御 (背靠掩体)"; dom.stanceText.style.color = '#34d399';
+        };
+
+        dom.frame.addEventListener('touchstart', (e) => { if (e.target.closest('button')) return; const touch = e.touches[0]; onActionStart(touch.clientX, touch.clientY); }, { passive: false });
+        dom.frame.addEventListener('touchmove', (e) => { if (e.target.closest('button')) return; const touch = e.touches[0]; onActionMove(touch.clientX, touch.clientY); }, { passive: false });
+        dom.frame.addEventListener('touchend', onActionEnd); dom.frame.addEventListener('touchcancel', onActionEnd);
+        dom.frame.addEventListener('mousedown', (e) => { if (e.target.closest('button')) return; onActionStart(e.clientX, e.clientY); });
+        window.addEventListener('mousemove', (e) => { onActionMove(e.clientX, e.clientY); }); window.addEventListener('mouseup', onActionEnd);
+        dom.btnRestart.addEventListener('click', () => { returnToMainMenu(); });
+        // 关闭排行榜弹窗
+        dom.btnCloseLeaderboard.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dom.leaderboardModal.classList.add('hidden');
+        });
+
+        // 结算界面的“查看前20”按钮
+        dom.btnLeaderboardGo.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openLeaderboardModal(e);
+        });
+
+        // 结算界面的“录入功勋”按钮
+        dom.btnSaveName.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const name = dom.playerNameInput.value;
+            updateRecordName(name);
+        });
+        function resizeGameViewport(resetAim = false) {
+            if (!camera || !renderer) return;
+            const rect = dom.canvasBox.getBoundingClientRect();
+            const width = Math.max(1, Math.round(rect.width));
+            const height = Math.max(1, Math.round(rect.height));
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height, false);
+            renderer.domElement.style.width = '100%';
+            renderer.domElement.style.height = '100%';
+            if (resetAim) resetCrosshairToCenter(); else updateCrosshairUI();
+        }
+        window.addEventListener('resize', () => resizeGameViewport(true));
+        window.addEventListener('orientationchange', () => setTimeout(() => resizeGameViewport(true), 80));
+        if (window.visualViewport) window.visualViewport.addEventListener('resize', () => resizeGameViewport(false));
+    }
+
+    function resetFullGame() {
+        audio.init();
+        GAME.stage = 1; GAME.kills = 0; GAME.hp = GAME.maxHp; GAME.armor = 0; GAME.invincibleTimer = 0; GAME.damageMultiplier = 1.0;
+        GAME.items = { medkit: 0, potion: 0, turret: 0 }; GAME.weapons.vector.curAmmo = GAME.weapons.vector.magSize;
+        GAME.weapons.shotgun.unlocked = false; GAME.weapons.rifle.unlocked = false; GAME.weapons.rpg.unlocked = false;
+        GAME.stageTransitionLock = false; GAME.isHoldingTouch = false;
+        currentRunRecordId = null;
+        dom.gameOverModal.classList.add('hidden'); dom.upgradeModal.classList.add('hidden'); dom.storyEndingModal.classList.add('hidden'); dom.endlessDecisionBox.classList.add('hidden');
+        switchWeapon('vector'); updateHpUI(); updateArmorUI(); updateInventoryUI();
+        if (GAME.mode === 'STORY') { showStoryIntro(1); }
+        else { resetStageForCurrent(); GAME.state = 'PLAYING'; }
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        if (GAME.isPaused) return;
+        const delta = Math.min(clock.getDelta(), 0.1);
+
+        const targetPose = (GAME.isHoldingTouch && GAME.weapons[GAME.activeWeapon].curAmmo > 0) ? 1.0 : 0.0;
+        GAME.poseFactor = THREE.MathUtils.lerp(GAME.poseFactor, targetPose, delta * 12);
+        bearTorso.position.y = THREE.MathUtils.lerp(0.42, 1.05, GAME.poseFactor); bearTorso.rotation.x = THREE.MathUtils.lerp(0.15, -0.05, GAME.poseFactor); bearTorso.rotation.y = THREE.MathUtils.lerp(Math.PI, 0, GAME.poseFactor);
+        const wind = Math.sin(clock.getElapsedTime() * 8) * 0.15; bandanaRibbons.forEach((rib, idx) => { rib.rotation.z = (idx === 0 ? -0.25 : 0.25) + wind; });
+
+        if (GAME.activeWeapon === 'rpg') {
+            if (GAME.isHoldingTouch && GAME.poseFactor > 0.8) GAME.rpgAimHoldTime = Math.min(1.0, GAME.rpgAimHoldTime + delta); else GAME.rpgAimHoldTime = 0;
+            const pct = GAME.rpgAimHoldTime / 1.0; dom.rpgLockRing.style.strokeDashoffset = 188.5 * (1 - pct);
+            dom.rpgLockText.innerText = (pct >= 1.0 ? "LOCKED 100%" : `AIMING ${Math.round(pct * 100)}%`); dom.rpgLockText.style.color = (pct >= 1.0 ? "#34d399" : "#ef4444");
+        }
+
+        if (jetMesh) jetMesh.position.z += delta * 140;
+        updateWeather(delta); updateAutoTurret(delta);
+
+        if (GAME.state === 'PLAYING') {
+            if (GAME.isHoldingTouch && GAME.poseFactor > 0.8) handleWeaponFire();
+            handleCoverReload(delta);
+            if (GAME.invincibleTimer > 0) { GAME.invincibleTimer -= delta; if (GAME.invincibleTimer <= 0) dom.invincibleOverlay.style.opacity = '0'; }
+
+            GAME.stageTimer -= delta;
+            const minutes = Math.floor(Math.max(0, GAME.stageTimer) / 60); const seconds = Math.floor(Math.max(0, GAME.stageTimer) % 60);
+            dom.timerText.innerText = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+            if (GAME.stageTimer <= 90 && GAME.currentWaveIndex === 1) triggerNextWave(2);
+            else if (GAME.stageTimer <= 60 && GAME.currentWaveIndex === 2) triggerNextWave(3);
+            else if (GAME.stageTimer <= 30 && GAME.currentWaveIndex === 3) triggerNextWave(4);
+            else if (GAME.stageTimer <= 0 && GAME.currentWaveIndex === 4 && !GAME.boss) triggerNextWave(5);
+
+            if (GAME.currentWaveIndex >= 1 && GAME.currentWaveIndex < 5 && GAME.waveSpawnQueue === 0 && enemies.length === 0) {
+                if (GAME.earlyAdvanceCountdown < 0) { GAME.earlyAdvanceCountdown = 3.0; showCenterAlert("⚡ 尸群已被全歼！3 秒后提前突入下一波！"); }
+                else { GAME.earlyAdvanceCountdown -= delta; if (GAME.earlyAdvanceCountdown <= 0) { GAME.earlyAdvanceCountdown = -1; triggerNextWave(GAME.currentWaveIndex + 1); } }
+            }
+
+            const now = clock.getElapsedTime();
+            if (GAME.waveSpawnQueue > 0 && now - GAME.lastWaveSpawnTime > GAME.waveSpawnInterval) {
+                GAME.lastWaveSpawnTime = now; GAME.waveSpawnQueue--;
+                const cfg = STAGE_CONFIGS[Math.max(0, Math.min(STAGE_CONFIGS.length - 1, GAME.stage - 1))]; const spawnX = (Math.random() - 0.5) * 22;
+                let enemyType = 'zombie';
+                const activeDragons = enemies.filter(e => e.type === 'flying_dragon' && e.isAlive).length;
+                const activeCyborgs = enemies.filter(e => e.type === 'cyborg_soldier' && e.isAlive).length;
+
+                // Req 5: 第三关全红僵尸; Req 1: 其他关卡25%概率刷红僵尸
+                if (GAME.stage === 3) {
+                    enemyType = 'fast_zombie';
+                } else if (GAME.stage < 4 && Math.random() < 0.25) {
+                    enemyType = 'fast_zombie';
+                } else if (GAME.stage === 2 && activeDragons < 3 && Math.random() < 0.35) { // Req 3
+                    enemyType = 'flying_dragon';
+                } else if (GAME.stage === 4) {
+                    enemyType = 'human_soldier'; // 第四关全人类
+                } else if (GAME.stage === 5 && Math.random() < 0.50) {
+                    enemyType = 'alien_trooper';
+                }
+
+                new EnemyEntity({
+                    pos: new THREE.Vector3(spawnX, (enemyType === 'flying_dragon' || enemyType === 'alien_trooper' ? 4.5 : 0), -45 - Math.random() * 20),
+                    type: enemyType,
+                    hp: cfg.zombieHpBase + Math.random() * 25,
+                    speed: null 
+                });
+            }
+
+            if (GAME.airstrikeCooldown > 0) { GAME.airstrikeCooldown -= delta; dom.airstrikeTimerBadge.innerText = `${Math.ceil(GAME.airstrikeCooldown)}s`; if (GAME.airstrikeCooldown <= 0) dom.airstrikeTimerBadge.innerText = '就绪'; }
+            GAME.nextSupplyTime -= delta; if (GAME.nextSupplyTime <= 0) { new SupplyDrone(); GAME.nextSupplyTime = 20; } // Req 10
+        }
+
+        let isAtBarricade = false;
+        for (let i = 0; i < enemies.length; i++) { enemies[i].update(delta); if (enemies[i].isAlive && enemies[i].mesh.position.z >= -1.6) isAtBarricade = true; }
+        dom.proximityAlert.classList.toggle('hidden', !isAtBarricade);
+
+        for (let i = 0; i < enemyProjectiles.length; i++) enemyProjectiles[i].update(delta);
+        for (let i = 0; i < supplyDrones.length; i++) supplyDrones[i].update(delta);
+
+        for (let i = tracers.length - 1; i >= 0; i--) { const tr = tracers[i]; tr.alpha -= delta * 8; tr.mesh.material.opacity = tr.alpha; if (tr.alpha <= 0) { safeRemoveObject3D(tr.mesh, true); tracers.splice(i, 1); } }
+        for (let i = particles.length - 1; i >= 0; i--) { const p = particles[i]; p.mesh.position.add(p.vel.clone().multiplyScalar(delta)); p.vel.y -= 9.8 * delta; p.lifetime -= delta; if (p.lifetime <= 0) { safeRemoveObject3D(p.mesh, true); particles.splice(i, 1); } }
+        for (let i = explosions.length - 1; i >= 0; i--) { const ex = explosions[i]; ex.scale += delta * 7.5; ex.alpha -= delta * 2.0; ex.fireball.scale.set(ex.scale, ex.scale, ex.scale); ex.fireball.material.opacity = Math.max(0, ex.alpha); if (ex.alpha <= 0) { safeRemoveObject3D(ex.fireball, true); explosions.splice(i, 1); } }
+
+        GAME.cameraShake = THREE.MathUtils.lerp(GAME.cameraShake, 0, delta * 10);
+        const shakeX = (Math.random() - 0.5) * GAME.cameraShake * 0.35; const shakeY = (Math.random() - 0.5) * GAME.cameraShake * 0.35;
+        const targetCamX = 0.9 + (GAME.poseFactor * -0.15) + shakeX; const targetCamY = 1.75 + (GAME.poseFactor * 0.1) + shakeY; const targetCamZ = 3.2 - (GAME.poseFactor * 0.4);
+        camera.position.x = THREE.MathUtils.lerp(camera.position.x, targetCamX, delta * 8); camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetCamY, delta * 8); camera.position.z = THREE.MathUtils.lerp(camera.position.z, targetCamZ, delta * 8);
+
+        renderer.render(scene, camera);
+    }
+
+    window.onload = () => { 
+        fetchIpLocation(); // 预拉取归属地信息
+        initThree(); 
+        setupControls(); 
+        animate(); 
+    };
+    </script>
+</body>
+</html>
